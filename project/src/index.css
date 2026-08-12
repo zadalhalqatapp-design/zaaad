@@ -1,0 +1,120 @@
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700&family=Amiri+Quran&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+html {
+  direction: rtl;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  background-color: #F7F8F5;
+  color: #103E16;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+html.dark body {
+  background-color: #0A2C0F;
+  color: #E8F0E9;
+}
+
+@layer components {
+  .card {
+    @apply bg-white dark:bg-primary-900/60 rounded-2xl shadow-soft border border-primary-100/60 dark:border-primary-800/60;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 font-medium rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-primary-900;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary-600 hover:bg-primary-700 text-white px-5 py-2.5 shadow-soft;
+  }
+
+  .btn-gold {
+    @apply btn bg-gold-500 hover:bg-gold-600 text-primary-900 px-5 py-2.5 shadow-soft;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent hover:bg-primary-50 dark:hover:bg-primary-800/40 text-primary-700 dark:text-primary-100 px-4 py-2.5;
+  }
+
+  .btn-outline {
+    @apply btn border border-primary-200 dark:border-primary-700 hover:bg-primary-50 dark:hover:bg-primary-800/40 text-primary-700 dark:text-primary-100 px-4 py-2.5;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-primary-200 dark:border-primary-700 bg-white dark:bg-primary-900/50 px-4 py-2.5 text-primary-900 dark:text-primary-50 placeholder:text-primary-300 dark:placeholder:text-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-primary-700 dark:text-primary-200 mb-1.5;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .section-title {
+    @apply text-lg font-bold text-primary-800 dark:text-primary-100;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes shimmer {
+  100% { transform: translateX(-100%); }
+}
+
+.skeleton {
+  @apply relative overflow-hidden bg-primary-100/40 dark:bg-primary-800/40 rounded-xl;
+}
+
+.skeleton::after {
+  content: '';
+  @apply absolute inset-0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  animation: shimmer 1.5s infinite;
+}
+
+html.dark .skeleton::after {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #9FBEA2;
+  border-radius: 4px;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: #15501B;
+}
