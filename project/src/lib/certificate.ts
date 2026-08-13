@@ -8,10 +8,8 @@
  * jsPDF لا يقوم بعملية الـ shaping بنفسه.
  *
  * الحل: نبني الشهادة كعنصر HTML حقيقي (المتصفح يتكفّل بتشكيل العربية
- * واتجاه RTL بشكل صحيح تلقائيًا، تمامًا كباقي صفحات التطبيق)، ثم نحوّله
- * إلى صورة عالية الدقة عبر html2canvas، ونضعها كصفحة واحدة داخل PDF
- * بمقاس A4 Landscape حقيقي (297×210mm) — فتبقى نسب الطباعة دقيقة تمامًا
- * دون أي تمدد أو قص عند التصدير.
+ * واتجاه RTL بشكل تلقائي)، ثم نحوّله إلى صورة عالية الدقة عبر html2canvas،
+ * ونضعها كصفحة واحدة داخل PDF بمقاس A4 Landscape حقيقي (297×210mm).
  */
 
 import jsPDF from 'jspdf';
@@ -44,8 +42,13 @@ function escapeHtml(value: string): string {
   return div.innerHTML;
 }
 
-/** نص الدعاء أسفل الشهادة — يتغيّر الضمير تلقائيًا إذا توفّر جنس الطالب،
- *  وإلا يبقى بصيغة الحالتين معًا (الصيغة الافتراضية الآمنة). */
+/** تنظيف تنسيق التاريخ ليظهر بشكل نظيف */
+function formatDate(dateStr?: string): string {
+  if (!dateStr) return '';
+  return dateStr.split('T')[0];
+}
+
+/** نص الدعاء أسفل الشهادة — يتغيّر الضمير تلقائيًا حسب جنس الطالب */
 function getDuaText(gender?: 'male' | 'female'): string {
   if (gender === 'male') {
     return 'نسأل الله له دوام التوفيق والسداد، وأن يجعل ما تعلّمه في ميزان حسناته، ويبارك في جهده وعلمه.';
@@ -56,8 +59,7 @@ function getDuaText(gender?: 'male' | 'female'): string {
   return 'نسأل الله له / لها دوام التوفيق والسداد، وأن يجعل ما تعلّمه في ميزان حسناته، ويبارك في جهده وعلمه.';
 }
 
-/** خلفية زخرفية خفيفة جدًا: نقش هندسي إسلامي متكرر (SVG pattern) بشفافية
- *  منخفضة + موجتان جانبيتان — بدون أي صورة، فتبقى الشهادة خفيفة الحجم. */
+/** خلفية زخرفية خفيفة: نقش هندسي إسلامي متكرر (SVG pattern) بشفافية منخفضة */
 function buildBackgroundLayer(): string {
   return `
     <svg width="100%" height="100%" viewBox="0 0 ${PAGE_W_MM} ${PAGE_H_MM}"
@@ -81,18 +83,18 @@ function buildBackgroundLayer(): string {
   `;
 }
 
-/** زاوية زخرفية بسيطة (ربع دائرة + نقطة) بأربع اتجاهات */
+/** زاوية زخرفية بأربع اتجاهات داخل الإطار بأمان */
 function buildCorner(pos: 'tl' | 'tr' | 'bl' | 'br'): string {
   const map: Record<string, string> = {
-    tl: 'top:11mm;left:11mm;transform:rotate(0deg);',
-    tr: 'top:11mm;right:11mm;transform:scaleX(-1);',
-    bl: 'bottom:11mm;left:11mm;transform:scaleY(-1);',
-    br: 'bottom:11mm;right:11mm;transform:scale(-1,-1);',
+    tl: 'top:10mm;left:10mm;transform:rotate(0deg);',
+    tr: 'top:10mm;right:10mm;transform:scaleX(-1);',
+    bl: 'bottom:10mm;left:10mm;transform:scaleY(-1);',
+    br: 'bottom:10mm;right:10mm;transform:scale(-1,-1);',
   };
 
   return `
-    <svg width="22mm" height="22mm" viewBox="0 0 22 22"
-         style="position:absolute;${map[pos]}opacity:.72"
+    <svg width="20mm" height="20mm" viewBox="0 0 22 22"
+         style="position:absolute;${map[pos]}opacity:.72;pointer-events:none;"
          xmlns="http://www.w3.org/2000/svg">
       <path d="M1 14 Q1 1 14 1" fill="none"
             stroke="${COLORS.gold}" stroke-width="0.75"/>
@@ -112,7 +114,7 @@ function buildInfoBadge(label: string, value: string): string {
       <div style="color:${COLORS.grayText};font-size:4.2mm;font-weight:700;">${label}</div>
       <div style="color:${COLORS.darkGreen};font-size:5.6mm;font-weight:700;
                   margin-top:1.5mm;white-space:nowrap;overflow:hidden;
-                  text-overflow:ellipsis;">${value}</div>
+                  text-overflow:ellipsis;" dir="auto">${value}</div>
     </div>
   `;
 }
@@ -123,26 +125,22 @@ interface CertificateAssets {
   appName?: string;
 }
 
-/**
- * يبني قالب HTML الكامل للشهادة داخل عنصر منفصل (خارج الشاشة)، يحوّله
- * إلى صورة عالية الدقة، ثم يضعها كصفحة PDF بمقاس A4 landscape حقيقي،
- * ويبدأ تنزيلها في المتصفح.
- */
 export async function generateCertificatePDF(cert: Certificate, assets: CertificateAssets = {}): Promise<void> {
   const appName = assets.appName || 'زاد الحلقات';
   const logoSrc = assets.logoUrl && assets.logoUrl.trim() ? assets.logoUrl : '/logo.png';
+  const issueDateFormatted = formatDate(cert.issueDate);
 
   const qrPayload = JSON.stringify({
     id: cert.id,
     num: cert.certificateNumber,
     student: cert.studentName,
-    date: cert.issueDate,
+    date: issueDateFormatted,
   });
   let qrDataUrl = '';
   try {
     qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 220, margin: 1, color: { dark: COLORS.darkGreen, light: '#00000000' } });
   } catch {
-    // فشل توليد QR لا يجب أن يمنع إصدار الشهادة
+    // فشل توليد QR لا يمنع إصدار الشهادة
   }
 
   const signatureBlock = assets.signatureUrl && assets.signatureUrl.trim()
@@ -167,7 +165,7 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
 
       ${buildBackgroundLayer()}
 
-      <!-- الإطار المزدوج: 5mm و 8mm من حافة الصفحة -->
+      <!-- الإطار المزدوج -->
       <div style="position:absolute;inset:5mm;border:0.7mm solid ${COLORS.gold};
                   box-sizing:border-box;pointer-events:none;"></div>
       <div style="position:absolute;inset:8mm;border:0.35mm solid ${COLORS.gold};
@@ -202,7 +200,7 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
         تشهد منصة ${escapeHtml(appName)} بأن
       </div>
 
-      <!-- اسم الطالب: أهم عنصر نصي في الشهادة -->
+      <!-- اسم الطالب -->
       <div style="position:absolute;top:78mm;left:50%;transform:translateX(-50%);
                   width:220mm;height:25mm;display:flex;align-items:center;justify-content:center;
                   box-sizing:border-box;overflow:hidden;">
@@ -223,32 +221,33 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
                   color:${COLORS.grayText};font-size:5.8mm;line-height:1.45;">
         <div>قد أتم برنامج</div>
         <div style="color:${COLORS.darkGreen};font-size:7mm;font-weight:700;margin-top:1.5mm;
-                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" dir="auto">
           ${escapeHtml(cert.cycleName)}
         </div>
       </div>
 
-      <!-- بيانات الإنجاز: ثلاثة أعمدة رسمية وليست بطاقات Dashboard -->
+      <!-- بيانات الإنجاز الثلاثة -->
       <div style="position:absolute;top:133mm;left:50%;transform:translateX(-50%);
                   width:211mm;height:27mm;display:flex;justify-content:center;gap:8mm;
                   box-sizing:border-box;direction:rtl;">
         ${buildInfoBadge('نسبة الإنجاز', `${cert.progressPercent}%`)}
         ${buildInfoBadge('رقم الشهادة', escapeHtml(cert.certificateNumber))}
-        ${buildInfoBadge('تاريخ الإصدار', escapeHtml(cert.issueDate))}
+        ${buildInfoBadge('تاريخ الإصدار', escapeHtml(issueDateFormatted))}
       </div>
 
-      <!-- دعاء قصير واضح -->
+      <!-- دعاء قصير -->
       <div style="position:absolute;top:158mm;left:50%;transform:translateX(-50%);
                   width:220mm;height:11mm;text-align:center;color:${COLORS.grayText};
                   font-size:5.2mm;line-height:1.55;box-sizing:border-box;overflow:hidden;">
         ${escapeHtml(getDuaText(cert.studentGender))}
       </div>
 
-      <!-- المنطقة السفلية: التوقيع والختم والـQR -->
+      <!-- المنطقة السفلية: التوقيع يمينًا، والـQR والختم يسارًا -->
       <div style="position:absolute;top:174mm;left:12mm;right:12mm;height:25mm;
                   box-sizing:border-box;display:flex;align-items:flex-end;
-                  justify-content:space-between;direction:ltr;">
+                  justify-content:space-between;direction:rtl;">
 
+        <!-- التوقيع (جهة اليمين في العربية) -->
         <div style="width:55mm;height:26mm;text-align:center;direction:rtl;box-sizing:border-box;">
           <div style="color:${COLORS.grayText};font-size:3.8mm;margin-bottom:0.5mm;">التوقيع</div>
           ${signatureBlock}
@@ -257,16 +256,17 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
                       font-weight:700;box-sizing:border-box;">${escapeHtml(appName)}</div>
         </div>
 
+        <!-- الـ QR (جهة اليسار في العربية) -->
         <div style="width:55mm;height:26mm;display:flex;align-items:center;justify-content:center;
                     direction:rtl;box-sizing:border-box;gap:4mm;">
           <div style="width:25mm;height:25mm;border:0.3mm solid ${COLORS.gold};padding:1mm;
-                      box-sizing:border-box;display:flex;align-items:center;justify-content:center;">
+                      box-sizing:border-box;display:flex;align-items:center;justify-content:center;background:#fff;">
             ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" style="width:22mm;height:22mm;display:block;" />` : ''}
           </div>
           <div style="width:26mm;text-align:right;box-sizing:border-box;">
             <div style="font-size:3.3mm;color:${COLORS.grayText};line-height:1.5;">تحقق من صحة الشهادة</div>
             <div style="font-size:3.8mm;color:${COLORS.darkGreen};font-weight:700;
-                        margin-top:1mm;line-height:1.4;word-break:break-word;">
+                        margin-top:1mm;line-height:1.4;word-break:break-word;" dir="ltr">
               ${escapeHtml(cert.certificateNumber)}
             </div>
           </div>
@@ -279,8 +279,6 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
   document.body.appendChild(container);
 
   try {
-    // التأكد من تحميل خط Cairo العربي فعليًا قبل التصوير، وإلا قد يُرسم
-    // النص بخط بديل غير مضبوط عند html2canvas.
     if ('fonts' in document) {
       await document.fonts.ready;
     }
@@ -301,9 +299,6 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
       }
     }
 
-    // لا نمرر width/height بالبكسل إلى html2canvas؛ لأن ذلك كان سبب تصغير
-    // التصميم داخل صفحة A4. نترك المتصفح يحسب 297×210mm طبيعيًا، ثم نرفع
-    // الدقة بالـscale فقط.
     const canvas = await html2canvas(container, {
       scale: 3,
       backgroundColor: COLORS.ivory,
@@ -313,8 +308,8 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
     const imgData = canvas.toDataURL('image/png');
 
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    const pageW = pdf.internal.pageSize.getWidth();  // 297mm
-    const pageH = pdf.internal.pageSize.getHeight(); // 210mm
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
     pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
     pdf.save(`certificate-${cert.certificateNumber}.pdf`);
   } finally {
