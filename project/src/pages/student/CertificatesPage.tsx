@@ -24,11 +24,21 @@ export function StudentCertificates() {
   const generatePDF = async (cert: Certificate) => {
     try {
       notify('جارٍ إعداد الشهادة...', 'info');
-      await generateCertificatePDF(cert, {
-        logoUrl: settings?.logoUrl,
-        signatureUrl: settings?.signatureUrl,
-        appName: settings?.appName,
-      });
+      // استخدم الاسم الكامل من حساب الطالب إذا كان متاحًا؛
+      // وإذا لم يكن أطول/متاحًا نحتفظ بالاسم المخزن في الشهادة.
+      const fullStudentName =
+        typeof user?.name === 'string' && user.name.trim().length > cert.studentName.trim().length
+          ? user.name.trim()
+          : cert.studentName;
+
+      await generateCertificatePDF(
+        { ...cert, studentName: fullStudentName },
+        {
+          logoUrl: settings?.logoUrl,
+          signatureUrl: settings?.signatureUrl,
+          appName: settings?.appName,
+        },
+      );
       notify('تم تنزيل الشهادة', 'success');
     } catch {
       notify('تعذّر إنشاء ملف الشهادة.', 'error');
