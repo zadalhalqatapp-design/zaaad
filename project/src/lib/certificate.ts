@@ -315,4 +315,37 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
   } finally {
     document.body.removeChild(container);
   }
-}
+}// ... (الأجزاء السابقة كما هي)
+
+      <!-- المنطقة السفلية: التوقيع يمينًا، والـQR والختم يسارًا -->
+      <div style="position:absolute;top:174mm;left:12mm;right:12mm;height:25mm;
+                  box-sizing:border-box;display:flex;align-items:flex-end;
+                  justify-content:space-between;direction:ltr;">
+
+        <!-- التوقيع (يظهر في الجهة اليمنى من الشهادة) -->
+        <div style="width:55mm;height:26mm;text-align:center;direction:rtl;box-sizing:border-box;order:2;">
+          <div style="color:${COLORS.grayText};font-size:3.8mm;margin-bottom:0.5mm;">التوقيع</div>
+          ${signatureBlock}
+          <div style="width:45mm;margin:0 auto;border-top:0.3mm solid ${COLORS.grayText};
+                      padding-top:0.8mm;font-size:4mm;color:${COLORS.darkGreen};
+                      font-weight:700;box-sizing:border-box;">${escapeHtml(appName)}</div>
+        </div>
+
+        <!-- الـ QR (يظهر في الجهة اليسرى من الشهادة) -->
+        <div style="width:55mm;height:26mm;display:flex;align-items:center;justify-content:center;
+                    direction:rtl;box-sizing:border-box;gap:4mm;order:1;">
+          <div style="width:25mm;height:25mm;border:0.3mm solid ${COLORS.gold};padding:1mm;
+                      box-sizing:border-box;display:flex;align-items:center;justify-content:center;background:#fff;">
+            ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" style="width:22mm;height:22mm;display:block;" />` : ''}
+          </div>
+          <div style="width:26mm;text-align:right;box-sizing:border-box;">
+            <div style="font-size:3.3mm;color:${COLORS.grayText};line-height:1.5;">تحقق من صحة الشهادة</div>
+            <div style="font-size:3.8mm;color:${COLORS.darkGreen};font-weight:700;
+                        margin-top:1mm;line-height:1.4;word-break:break-word;" dir="ltr">
+              ${escapeHtml(cert.certificateNumber)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+// ... (بقية الكود)
