@@ -34,12 +34,6 @@ const COLORS = {
 const PAGE_W_MM = 297;
 const PAGE_H_MM = 210;
 
-// التصميم يُبنى بالـmm، ثم يُرسم بدقة عالية في html2canvas.
-const DESIGN_DPI = 150;
-const MM_TO_PX = DESIGN_DPI / 25.4;
-const CANVAS_W = Math.round(PAGE_W_MM * MM_TO_PX);
-const CANVAS_H = Math.round(PAGE_H_MM * MM_TO_PX);
-
 function mm(value: number): string {
   return `${value}mm`;
 }
@@ -61,13 +55,6 @@ function getDuaText(gender?: 'male' | 'female'): string {
   }
   return 'نسأل الله له / لها دوام التوفيق والسداد، وأن يجعل ما تعلّمه في ميزان حسناته، ويبارك في جهده وعلمه.';
 }
-
-// أيقونات SVG بسيطة (لا تعتمد على خط أيقونات خارجي، فترسم بثبات مع html2canvas)
-const ICONS = {
-  trend: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${COLORS.medGreen}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>`,
-  award: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${COLORS.medGreen}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M8.5 13.5 7 22l5-3 5 3-1.5-8.5"/></svg>`,
-  calendar: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${COLORS.medGreen}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`,
-};
 
 /** خلفية زخرفية خفيفة جدًا: نقش هندسي إسلامي متكرر (SVG pattern) بشفافية
  *  منخفضة + موجتان جانبيتان — بدون أي صورة، فتبقى الشهادة خفيفة الحجم. */
@@ -169,122 +156,125 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
   container.style.width = mm(PAGE_W_MM);
   container.style.height = mm(PAGE_H_MM);
   container.style.boxSizing = 'border-box';
+  container.style.overflow = 'hidden';
   container.dir = 'rtl';
   container.style.fontFamily = "'Cairo', system-ui, sans-serif";
   container.style.background = COLORS.ivory;
 
   container.innerHTML = `
-    <div style="width:${mm(PAGE_W_MM)};height:${mm(PAGE_H_MM)};box-sizing:border-box;
-                position:relative;background:${COLORS.ivory};overflow:hidden;
-                direction:rtl;color:${COLORS.darkGreen};">
+    <div style="width:297mm;height:210mm;box-sizing:border-box;position:relative;
+                background:${COLORS.ivory};overflow:hidden;direction:rtl;color:${COLORS.darkGreen};">
 
       ${buildBackgroundLayer()}
 
+      <!-- الإطار المزدوج: 5mm و 8mm من حافة الصفحة -->
       <div style="position:absolute;inset:5mm;border:0.7mm solid ${COLORS.gold};
-                  pointer-events:none;box-sizing:border-box;"></div>
+                  box-sizing:border-box;pointer-events:none;"></div>
       <div style="position:absolute;inset:8mm;border:0.35mm solid ${COLORS.gold};
-                  pointer-events:none;box-sizing:border-box;"></div>
+                  box-sizing:border-box;pointer-events:none;"></div>
 
       ${buildCorner('tl')}${buildCorner('tr')}${buildCorner('bl')}${buildCorner('br')}
 
-      <!-- الشعار: أقصى 42×22mm، أعلى الوسط -->
-      <div style="position:absolute;top:13mm;left:50%;transform:translateX(-50%);
-                  width:42mm;height:22mm;display:flex;flex-direction:column;
-                  align-items:center;justify-content:flex-start;box-sizing:border-box;">
-        <img src="${logoSrc}" style="max-width:42mm;max-height:16mm;width:auto;height:auto;
-                  object-fit:contain;display:block;" />
-        <div style="color:${COLORS.darkGreen};font-size:7mm;font-weight:700;
-                    line-height:1;margin-top:2mm;white-space:nowrap;">${escapeHtml(appName)}</div>
+      <!-- الشعار: أعلى الصفحة جهة اليسار -->
+      <div style="position:absolute;top:13mm;left:13mm;width:42mm;height:22mm;
+                  display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+                  box-sizing:border-box;direction:rtl;z-index:3;">
+        <img src="${logoSrc}" alt="شعار ${escapeHtml(appName)}"
+             style="max-width:42mm;max-height:15mm;width:auto;height:auto;object-fit:contain;
+                    display:block;" />
+        <div style="color:${COLORS.darkGreen};font-size:5.5mm;font-weight:700;line-height:1;
+                    margin-top:2mm;white-space:nowrap;">${escapeHtml(appName)}</div>
       </div>
 
-      <!-- عنوان الشهادة: يبدأ تقريبًا عند 43mm -->
-      <div style="position:absolute;top:43mm;left:50%;transform:translateX(-50%);
-                  width:150mm;height:18mm;display:flex;flex-direction:column;
-                  align-items:center;justify-content:flex-start;box-sizing:border-box;">
+      <!-- عنوان الشهادة: وسط الصفحة -->
+      <div style="position:absolute;top:42mm;left:50%;transform:translateX(-50%);
+                  width:150mm;height:22mm;display:flex;flex-direction:column;align-items:center;
+                  justify-content:flex-start;box-sizing:border-box;">
         <div style="color:${COLORS.darkGreen};font-size:14mm;font-weight:700;
-                    line-height:1.15;white-space:nowrap;">شهادة إنجاز</div>
-        <div style="width:40mm;height:0.45mm;background:${COLORS.gold};margin-top:2.5mm;"></div>
+                    line-height:1.1;white-space:nowrap;">شهادة إنجاز</div>
+        <div style="width:42mm;height:0.5mm;background:${COLORS.gold};margin-top:3mm;"></div>
       </div>
 
       <!-- النص التمهيدي -->
-      <div style="position:absolute;top:67mm;left:50%;transform:translateX(-50%);
-                  width:180mm;height:10mm;text-align:center;color:${COLORS.grayText};
+      <div style="position:absolute;top:68mm;left:50%;transform:translateX(-50%);
+                  width:180mm;height:9mm;text-align:center;color:${COLORS.grayText};
                   font-size:5.5mm;line-height:1.5;box-sizing:border-box;">
         تشهد منصة ${escapeHtml(appName)} بأن
       </div>
 
-      <!-- اسم الطالب -->
+      <!-- اسم الطالب: أهم عنصر نصي في الشهادة -->
       <div style="position:absolute;top:78mm;left:50%;transform:translateX(-50%);
-                  width:220mm;height:25mm;display:flex;align-items:center;
-                  justify-content:center;box-sizing:border-box;overflow:hidden;">
-        <div id="student-name"
-             style="color:${COLORS.darkGreen};font-size:14mm;font-weight:700;
+                  width:220mm;height:25mm;display:flex;align-items:center;justify-content:center;
+                  box-sizing:border-box;overflow:hidden;">
+        <div id="student-name" style="color:${COLORS.darkGreen};font-size:15mm;font-weight:700;
                     line-height:1.05;white-space:nowrap;text-align:center;max-width:220mm;">
           ${escapeHtml(cert.studentName)}
         </div>
       </div>
       <div style="position:absolute;top:104mm;left:50%;transform:translateX(-50%);
-                  width:100mm;height:0.45mm;
-                  background:linear-gradient(90deg,transparent,${COLORS.gold},transparent);"></div>
+                  width:105mm;height:0.45mm;background:linear-gradient(90deg,transparent,
+                  ${COLORS.gold},transparent);"></div>
 
       <!-- وصف الإنجاز -->
       <div style="position:absolute;top:108mm;left:50%;transform:translateX(-50%);
-                  width:220mm;height:20mm;text-align:center;box-sizing:border-box;
-                  color:${COLORS.grayText};font-size:6mm;line-height:1.5;">
+                  width:220mm;height:21mm;text-align:center;box-sizing:border-box;
+                  color:${COLORS.grayText};font-size:5.8mm;line-height:1.45;">
         <div>قد أتم برنامج</div>
-        <div style="color:${COLORS.darkGreen};font-size:7mm;font-weight:700;
-                    margin-top:1.5mm;white-space:nowrap;overflow:hidden;
-                    text-overflow:ellipsis;">
+        <div style="color:${COLORS.darkGreen};font-size:7mm;font-weight:700;margin-top:1.5mm;
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
           ${escapeHtml(cert.cycleName)}
         </div>
       </div>
 
-      <!-- بيانات الإنجاز: 3 أعمدة × 65mm -->
-      <div style="position:absolute;top:132mm;left:50%;transform:translateX(-50%);
-                  width:211mm;height:30mm;display:flex;justify-content:center;gap:9mm;
-                  box-sizing:border-box;">
+      <!-- بيانات الإنجاز: ثلاثة أعمدة رسمية وليست بطاقات Dashboard -->
+      <div style="position:absolute;top:133mm;left:50%;transform:translateX(-50%);
+                  width:211mm;height:27mm;display:flex;justify-content:center;gap:8mm;
+                  box-sizing:border-box;direction:rtl;">
         ${buildInfoBadge('نسبة الإنجاز', `${cert.progressPercent}%`)}
         ${buildInfoBadge('رقم الشهادة', escapeHtml(cert.certificateNumber))}
         ${buildInfoBadge('تاريخ الإصدار', escapeHtml(cert.issueDate))}
       </div>
 
-      <!-- العبارة الختامية الدعائية -->
+      <!-- دعاء قصير واضح -->
       <div style="position:absolute;top:163mm;left:50%;transform:translateX(-50%);
-                  width:220mm;height:12mm;text-align:center;color:${COLORS.grayText};
-                  font-size:4.8mm;line-height:1.6;box-sizing:border-box;overflow:hidden;">
+                  width:210mm;height:9mm;text-align:center;color:${COLORS.grayText};
+                  font-size:4.7mm;line-height:1.5;box-sizing:border-box;overflow:hidden;">
         ${escapeHtml(getDuaText(cert.studentGender))}
       </div>
 
-      <!-- المنطقة السفلية: التوقيع وQR -->
-      <div style="position:absolute;top:165mm;left:12mm;right:12mm;height:35mm;
+      <!-- المنطقة السفلية: التوقيع والختم والـQR -->
+      <div style="position:absolute;top:172mm;left:12mm;right:12mm;height:26mm;
                   box-sizing:border-box;display:flex;align-items:flex-end;
                   justify-content:space-between;direction:ltr;">
 
-        <div style="width:45mm;height:25mm;text-align:center;direction:rtl;box-sizing:border-box;">
-          <div style="color:${COLORS.grayText};font-size:4mm;margin-bottom:1mm;">التوقيع</div>
+        <div style="width:55mm;height:26mm;text-align:center;direction:rtl;box-sizing:border-box;">
+          <div style="color:${COLORS.grayText};font-size:3.8mm;margin-bottom:0.5mm;">التوقيع</div>
           ${signatureBlock}
-          <div style="width:45mm;border-top:0.3mm solid ${COLORS.grayText};
-                      padding-top:1mm;font-size:4.2mm;color:${COLORS.darkGreen};
+          <div style="width:45mm;margin:0 auto;border-top:0.3mm solid ${COLORS.grayText};
+                      padding-top:0.8mm;font-size:4mm;color:${COLORS.darkGreen};
                       font-weight:700;box-sizing:border-box;">${escapeHtml(appName)}</div>
         </div>
 
-        <div style="width:45mm;height:25mm;text-align:center;direction:rtl;
-                    box-sizing:border-box;display:flex;flex-direction:column;
-                    align-items:center;justify-content:flex-end;">
-          ${qrDataUrl ? `<img src="${qrDataUrl}" style="width:22mm;height:22mm;display:block;" />` : ''}
-          <div style="font-size:3.2mm;color:${COLORS.grayText};margin-top:0.8mm;line-height:1;">
-            تحقق من صحة الشهادة
+        <div style="width:55mm;height:26mm;display:flex;align-items:center;justify-content:center;
+                    direction:rtl;box-sizing:border-box;gap:4mm;">
+          <div style="width:25mm;height:25mm;border:0.3mm solid ${COLORS.gold};padding:1mm;
+                      box-sizing:border-box;display:flex;align-items:center;justify-content:center;">
+            ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" style="width:22mm;height:22mm;display:block;" />` : ''}
           </div>
-          <div style="font-size:3.8mm;color:${COLORS.darkGreen};margin-top:0.8mm;white-space:nowrap;">
-            رقم الشهادة: ${escapeHtml(cert.certificateNumber)}
+          <div style="width:26mm;text-align:right;box-sizing:border-box;">
+            <div style="font-size:3.3mm;color:${COLORS.grayText};line-height:1.5;">تحقق من صحة الشهادة</div>
+            <div style="font-size:3.8mm;color:${COLORS.darkGreen};font-weight:700;
+                        margin-top:1mm;line-height:1.4;word-break:break-word;">
+              ${escapeHtml(cert.certificateNumber)}
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- عبارة ختامية في أسفل الوسط -->
+      <!-- عبارة ختامية أسفل الوسط -->
       <div style="position:absolute;bottom:6mm;left:50%;transform:translateX(-50%);
                   width:130mm;height:8mm;text-align:center;color:${COLORS.grayText};
-                  font-size:5mm;line-height:1.5;">
+                  font-size:4.8mm;line-height:1.5;box-sizing:border-box;">
         نسأل الله أن يبارك في علمه وينفع به
       </div>
     </div>
@@ -316,14 +306,14 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
       }
     }
 
+    // لا نمرر width/height بالبكسل إلى html2canvas؛ لأن ذلك كان سبب تصغير
+    // التصميم داخل صفحة A4. نترك المتصفح يحسب 297×210mm طبيعيًا، ثم نرفع
+    // الدقة بالـscale فقط.
     const canvas = await html2canvas(container, {
       scale: 3,
       backgroundColor: COLORS.ivory,
       useCORS: true,
-      width: CANVAS_W,
-      height: CANVAS_H,
-      windowWidth: CANVAS_W,
-      windowHeight: CANVAS_H,
+      logging: false,
     });
     const imgData = canvas.toDataURL('image/png');
 
