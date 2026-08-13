@@ -176,13 +176,13 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
       ${buildCorner('tl')}${buildCorner('tr')}${buildCorner('bl')}${buildCorner('br')}
 
       <!-- الشعار: أعلى الصفحة جهة اليسار -->
-      <div style="position:absolute;top:13mm;left:13mm;width:42mm;height:22mm;
+      <div style="position:absolute;top:11mm;left:12mm;width:52mm;height:30mm;
                   display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
                   box-sizing:border-box;direction:rtl;z-index:3;">
         <img src="${logoSrc}" alt="شعار ${escapeHtml(appName)}"
-             style="max-width:42mm;max-height:15mm;width:auto;height:auto;object-fit:contain;
+             style="max-width:52mm;max-height:22mm;width:auto;height:auto;object-fit:contain;
                     display:block;" />
-        <div style="color:${COLORS.darkGreen};font-size:5.5mm;font-weight:700;line-height:1;
+        <div style="color:${COLORS.darkGreen};font-size:6mm;font-weight:700;line-height:1;
                     margin-top:2mm;white-space:nowrap;">${escapeHtml(appName)}</div>
       </div>
 
@@ -192,7 +192,7 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
                   justify-content:flex-start;box-sizing:border-box;">
         <div style="color:${COLORS.darkGreen};font-size:14mm;font-weight:700;
                     line-height:1.1;white-space:nowrap;">شهادة إنجاز</div>
-        <div style="width:42mm;height:0.5mm;background:${COLORS.gold};margin-top:3mm;"></div>
+        <div style="width:48mm;height:0.5mm;background:${COLORS.gold};margin-top:5mm;"></div>
       </div>
 
       <!-- النص التمهيدي -->
@@ -207,7 +207,9 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
                   width:220mm;height:25mm;display:flex;align-items:center;justify-content:center;
                   box-sizing:border-box;overflow:hidden;">
         <div id="student-name" style="color:${COLORS.darkGreen};font-size:15mm;font-weight:700;
-                    line-height:1.05;white-space:nowrap;text-align:center;max-width:220mm;">
+                    line-height:1.15;white-space:normal;word-break:keep-all;overflow-wrap:normal;
+                    text-align:center;width:220mm;max-width:220mm;min-height:18mm;
+                    padding:0 2mm;box-sizing:border-box;">
           ${escapeHtml(cert.studentName)}
         </div>
       </div>
@@ -236,14 +238,14 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
       </div>
 
       <!-- دعاء قصير واضح -->
-      <div style="position:absolute;top:163mm;left:50%;transform:translateX(-50%);
-                  width:210mm;height:9mm;text-align:center;color:${COLORS.grayText};
-                  font-size:4.7mm;line-height:1.5;box-sizing:border-box;overflow:hidden;">
+      <div style="position:absolute;top:158mm;left:50%;transform:translateX(-50%);
+                  width:220mm;height:11mm;text-align:center;color:${COLORS.grayText};
+                  font-size:5.2mm;line-height:1.55;box-sizing:border-box;overflow:hidden;">
         ${escapeHtml(getDuaText(cert.studentGender))}
       </div>
 
       <!-- المنطقة السفلية: التوقيع والختم والـQR -->
-      <div style="position:absolute;top:172mm;left:12mm;right:12mm;height:26mm;
+      <div style="position:absolute;top:174mm;left:12mm;right:12mm;height:25mm;
                   box-sizing:border-box;display:flex;align-items:flex-end;
                   justify-content:space-between;direction:ltr;">
 
@@ -271,12 +273,6 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
         </div>
       </div>
 
-      <!-- عبارة ختامية أسفل الوسط -->
-      <div style="position:absolute;bottom:6mm;left:50%;transform:translateX(-50%);
-                  width:130mm;height:8mm;text-align:center;color:${COLORS.grayText};
-                  font-size:4.8mm;line-height:1.5;box-sizing:border-box;">
-        نسأل الله أن يبارك في علمه وينفع به
-      </div>
     </div>
   `;
 
@@ -293,14 +289,13 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
     const studentNameEl = container.querySelector<HTMLElement>('#student-name');
     if (studentNameEl) {
       let fontSize = 15;
-      const minFont = 8;
+      const minFont = 7;
       studentNameEl.style.fontSize = `${fontSize}mm`;
 
-      while (
-        fontSize > minFont &&
-        (studentNameEl.scrollWidth > studentNameEl.clientWidth ||
-         studentNameEl.scrollHeight > studentNameEl.clientHeight)
-      ) {
+      while (fontSize > minFont) {
+        const fitsWidth = studentNameEl.scrollWidth <= studentNameEl.clientWidth + 2;
+        const fitsHeight = studentNameEl.scrollHeight <= studentNameEl.clientHeight + 2;
+        if (fitsWidth && fitsHeight) break;
         fontSize -= 0.5;
         studentNameEl.style.fontSize = `${fontSize}mm`;
       }
