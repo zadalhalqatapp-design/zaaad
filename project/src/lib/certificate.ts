@@ -111,13 +111,17 @@ function buildEightPointStar(size: number, color: string, opacity = 1): string {
   `;
 }
 
-/** شريط زخرفي (زهرة/نجمة + خطان متدرجان) يوضع أسفل عنوان الشهادة مباشرة */
+/** شريط زخرفي (زهرة/نجمة + خطان متدرجان) يوضع أسفل عنوان الشهادة مباشرة.
+ *  نتجنّب display:flex عمدًا (انظر ملاحظة html2canvas أعلى قسم اسم الطالب)
+ *  ونستخدم بدلاً منه عناصر inline-block بعرض ثابت لضمان رسم موثوق. */
 function buildTitleFlourish(): string {
   return `
-    <div style="display:flex;align-items:center;justify-content:center;gap:3mm;margin-top:4mm;">
-      <div style="width:34mm;height:0.4mm;background:linear-gradient(90deg,transparent,${COLORS.gold});"></div>
-      ${buildEightPointStar(6.5, COLORS.gold, 0.9)}
-      <div style="width:34mm;height:0.4mm;background:linear-gradient(270deg,transparent,${COLORS.gold});"></div>
+    <div style="text-align:center;white-space:nowrap;margin-top:4mm;line-height:0;">
+      <span style="display:inline-block;vertical-align:middle;width:34mm;height:0.4mm;
+                   background:linear-gradient(90deg,transparent,${COLORS.gold});"></span>
+      <span style="display:inline-block;vertical-align:middle;margin:0 3mm;">${buildEightPointStar(6.5, COLORS.gold, 0.9)}</span>
+      <span style="display:inline-block;vertical-align:middle;width:34mm;height:0.4mm;
+                   background:linear-gradient(270deg,transparent,${COLORS.gold});"></span>
     </div>
   `;
 }
@@ -276,12 +280,16 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
       </div>
 
       <!-- اسم الطالب -->
-      <div id="student-name-wrap" style="position:absolute;top:75mm;left:50%;transform:translateX(-50%);
-                  width:230mm;height:27mm;display:flex;align-items:center;justify-content:center;
-                  box-sizing:border-box;overflow:hidden;">
+      <!-- ملاحظة مهمة: تعمّدنا تجنّب display:flex هنا. مكتبة html2canvas معروفة
+           بضعف دعمها لـ flexbox مع النص العربي (RTL)، وقد يتسبب هذا الجمع في
+           قصّ النص ورسم جزء صغير منه فقط (مثل ظهور حرفين فقط من الاسم). لذلك
+           نعتمد نفس أسلوب التوسيط بـ text-align المستخدم بنجاح في بقية عناصر
+           الشهادة (وصف الإنجاز، الدعاء، ...) بدلاً من flex. -->
+      <div id="student-name-wrap" style="position:absolute;top:74mm;left:50%;transform:translateX(-50%);
+                  width:230mm;height:28mm;box-sizing:border-box;overflow:hidden;text-align:center;">
         <div id="student-name" style="color:${COLORS.darkGreen};font-size:15mm;font-weight:700;
                     line-height:1.2;white-space:normal;word-break:normal;overflow-wrap:break-word;
-                    text-align:center;width:225mm;max-width:225mm;
+                    text-align:center;width:225mm;max-width:225mm;margin:2mm auto 0 auto;
                     padding:0 2mm;box-sizing:border-box;">
           ${escapeHtml(cert.studentName)}
         </div>
