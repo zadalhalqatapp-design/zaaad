@@ -188,17 +188,17 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
         </div>
 
         <!-- الشعار واسم المنصة: أعلى المنتصف — عرض ضيق آمن -->
-        <div style="position:absolute;top:16mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:15mm;left:50%;transform:translateX(-50%);
                     width:90mm;display:block;text-align:center;box-sizing:border-box;">
           <img src="${logoSrc}" alt="شعار ${escapeHtml(appName)}"
-               style="max-width:20mm;max-height:20mm;width:auto;height:auto;
+               style="max-width:16mm;max-height:16mm;width:auto;height:auto;
                       object-fit:contain;display:block;margin:0 auto;" />
-          <div style="color:${COLORS.darkGreen};font-size:5mm;font-weight:700;line-height:1;
+          <div style="color:${COLORS.darkGreen};font-size:4.6mm;font-weight:700;line-height:1;
                       margin-top:1.5mm;white-space:nowrap;">${escapeHtml(appName)}</div>
         </div>
 
         <!-- عنوان الشهادة: وسط الصفحة — عرض آمن ضمن الشريط العلوي -->
-        <div style="position:absolute;top:39mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:41mm;left:50%;transform:translateX(-50%);
                     width:150mm;box-sizing:border-box;text-align:center;">
           <div style="color:${COLORS.darkGreen};font-family:'Amiri','Cairo',serif;
                       font-size:13mm;font-weight:700;line-height:1.1;white-space:nowrap;">شهادة إنجاز</div>
@@ -206,7 +206,7 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
         </div>
 
         <!-- النص التمهيدي (داخل الشريط الآمن الأوسط، عرض كامل متاح) -->
-        <div style="position:absolute;top:61mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:69mm;left:50%;transform:translateX(-50%);
                     width:180mm;text-align:center;color:${COLORS.grayText};
                     font-size:5.2mm;line-height:1.5;box-sizing:border-box;">
           تشهد منصة ${escapeHtml(appName)} بأن
@@ -216,21 +216,21 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
         <!-- ملاحظة: نتجنّب display:flex هنا لأن html2canvas يسيء التعامل معه
              مع نص عربي متغيّر الحجم ديناميكيًا، ونعتمد بدلاً منه على
              text-align لضمان رسم موثوق (نفس أسلوب بقية عناصر الشهادة). -->
-        <div id="student-name-wrap" style="position:absolute;top:71mm;left:50%;transform:translateX(-50%);
-                    width:230mm;height:26mm;box-sizing:border-box;overflow:hidden;text-align:center;">
+        <div id="student-name-wrap" style="position:absolute;top:79mm;left:50%;transform:translateX(-50%);
+                    width:230mm;height:24mm;box-sizing:border-box;overflow:hidden;text-align:center;">
           <div id="student-name" style="color:${COLORS.darkGreen};font-size:14mm;font-weight:700;
                       line-height:1.2;white-space:normal;word-break:normal;overflow-wrap:break-word;
-                      text-align:center;width:225mm;max-width:225mm;margin:1.5mm auto 0 auto;
+                      text-align:center;width:225mm;max-width:225mm;margin:1mm auto 0 auto;
                       padding:0 2mm;box-sizing:border-box;">
             ${escapeHtml(cert.studentName)}
           </div>
         </div>
-        <div style="position:absolute;top:98mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:106mm;left:50%;transform:translateX(-50%);
                     width:100mm;height:0.4mm;background:linear-gradient(90deg,transparent,
                     ${COLORS.gold},transparent);"></div>
 
         <!-- وصف الإنجاز (الشريط الآمن الأوسط) -->
-        <div style="position:absolute;top:102mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:110mm;left:50%;transform:translateX(-50%);
                     width:210mm;text-align:center;box-sizing:border-box;
                     color:${COLORS.grayText};font-size:5.4mm;line-height:1.4;">
           <div>قد أتم برنامج</div>
@@ -241,7 +241,7 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
         </div>
 
         <!-- بيانات الإنجاز الثلاثة (الشريط الآمن الأوسط) -->
-        <div style="position:absolute;top:126mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:135mm;left:50%;transform:translateX(-50%);
                     width:200mm;display:flex;justify-content:center;gap:8mm;
                     box-sizing:border-box;direction:rtl;">
           ${buildInfoBadge('نسبة الإنجاز', `${cert.progressPercent}%`)}
@@ -251,15 +251,15 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
 
         <!-- دعاء قصير (يبدأ داخل الشريط الآمن الأوسط ويلامس بداية الشريط
              السفلي، لذا نُبقي عرضه ضمن حدود الأمان الجانبية) -->
-        <div style="position:absolute;top:154mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:160mm;left:50%;transform:translateX(-50%);
                     width:185mm;text-align:center;color:${COLORS.grayText};
-                    font-size:4.8mm;line-height:1.5;box-sizing:border-box;overflow:hidden;">
+                    font-size:4.6mm;line-height:1.5;box-sizing:border-box;overflow:hidden;">
           ${escapeHtml(getDuaText(cert.studentGender))}
         </div>
 
         <!-- التوقيع + QR: داخل الشريط السفلي — عرض إجمالي محصور ضمن
              حدود الأمان الجانبية (SIDE_INSET_MM من كل جهة) -->
-        <div style="position:absolute;top:172mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:178mm;left:50%;transform:translateX(-50%);
                     width:${PAGE_W_MM - SIDE_INSET_MM * 2}mm;height:24mm;
                     box-sizing:border-box;display:flex;align-items:flex-end;
                     justify-content:space-between;direction:rtl;">
@@ -320,10 +320,19 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
       }
     }
 
+    // ملاحظة حاسمة: foreignObjectRendering:true إلزامي هنا. بدونه، يستخدم
+    // html2canvas خوارزمية داخلية خاصة به لقياس ورسم كل حرف على حدة عبر
+    // canvas.fillText، وهذه الخوارزمية ضعيفة جدًا مع النص العربي المتصل
+    // (Arabic shaping) وتتسبب بقصّ النص بعد أول حرفين أو ثلاثة بلا أي خطأ
+    // ظاهر. بتفعيل foreignObjectRendering يُستخدم <foreignObject> داخل SVG
+    // فيرسم المتصفح نفسه HTML الحقيقي (بتشكيل عربي سليم) بدل محرك الرسم
+    // اليدوي لـ html2canvas.
     const canvas = await html2canvas(container, {
       scale: 3,
       backgroundColor: COLORS.ivory,
       useCORS: true,
+      allowTaint: false,
+      foreignObjectRendering: true,
       logging: false,
     });
     const imgData = canvas.toDataURL('image/png');
