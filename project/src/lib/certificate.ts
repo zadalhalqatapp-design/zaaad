@@ -133,10 +133,49 @@ interface CertificateAssets {
   appName?: string;
 }
 
+/**
+ * يحوّل رابط صورة إلى data URI (base64) مضمّن بالكامل داخل النص.
+ *
+ * لماذا هذا ضروري: مع foreignObjectRendering:true (المطلوب لحل مشكلة قصّ
+ * النص العربي)، لا يقوم html2canvas بتصوير الصفحة الحيّة، بل "يُسلسل"
+ * الشهادة إلى صورة SVG مستقلة قائمة بذاتها (data:image/svg+xml...) ثم
+ * يحمّلها كصورة جديدة تمامًا منفصلة عن الصفحة. الصور المستقلة هذه ليس
+ * لها "رابط أساس" (base URL) لحلّ المسارات النسبية مثل "/logo.png" أو
+ * "/certificate-frame.png" — فتفشل هذه الموارد بالتحميل بصمت، وبما أن
+ * صورة الإطار تغطي كامل الشهادة، فإن فشلها وحده يجعل الناتج صفحة بيضاء
+ * فارغة تمامًا. الحل: تحويل كل صورة محلية إلى base64 مضمّن في نص الصفحة
+ * نفسه قبل البناء، بحيث لا حاجة لتحميل أي رابط خارجي أو نسبي إطلاقًا.
+ */
+async function toDataUri(url: string): Promise<string> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return url;
+    const blob = await res.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    // في حال فشل التحويل (رابط خارجي محجوب بـ CORS مثلاً) نعيد الرابط
+    // الأصلي كخطة بديلة بدل إفشال توليد الشهادة بالكامل.
+    return url;
+  }
+}
+
 export async function generateCertificatePDF(cert: Certificate, assets: CertificateAssets = {}): Promise<void> {
   const appName = assets.appName || 'زاد الحلقات';
-  const logoSrc = assets.logoUrl && assets.logoUrl.trim() ? assets.logoUrl : '/logo.png';
+  const logoUrlRaw = assets.logoUrl && assets.logoUrl.trim() ? assets.logoUrl : '/logo.png';
   const issueDateFormatted = formatDate(cert.issueDate);
+
+  // نحوّل كل الصور المحلية/الخارجية إلى base64 قبل البناء (انظر توضيح
+  // toDataUri أعلاه) — بالتوازي لتسريع التوليد.
+  const [logoSrc, frameSrc, signatureSrc] = await Promise.all([
+    toDataUri(logoUrlRaw),
+    toDataUri('/certificate-frame.png'),
+    assets.signatureUrl && assets.signatureUrl.trim() ? toDataUri(assets.signatureUrl) : Promise.resolve(''),
+  ]);
 
   const qrPayload = JSON.stringify({
     id: cert.id,
@@ -151,8 +190,8 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
     // فشل توليد QR لا يمنع إصدار الشهادة
   }
 
-  const signatureBlock = assets.signatureUrl && assets.signatureUrl.trim()
-    ? `<img src="${assets.signatureUrl}" style="width:40mm;height:12mm;object-fit:contain;margin-bottom:1mm;" />`
+  const signatureBlock = signatureSrc
+    ? `<img src="${signatureSrc}" style="width:40mm;height:12mm;object-fit:contain;margin-bottom:1mm;" />`
     : `<div style="width:40mm;height:12mm;"></div>`;
 
   const container = document.createElement('div');
@@ -182,7 +221,7 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
                 background:${COLORS.ivory};overflow:hidden;direction:rtl;color:${COLORS.darkGreen};">
 
       <!-- الإطار الزخرفي: صورة جاهزة تغطي الصفحة كاملة (بدون رسم SVG يدوي) -->
-      <img src="/certificate-frame.png" alt=""
+      <img src="${frameSrc}" alt=""
            style="position:absolute;inset:0;width:297mm;height:210mm;
                   object-fit:fill;display:block;z-index:0;" />
 
