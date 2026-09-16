@@ -10,21 +10,6 @@
  * الحل: نبني الشهادة كعنصر HTML حقيقي (المتصفح يتكفّل بتشكيل العربية
  * واتجاه RTL بشكل تلقائي)، ثم نحوّله إلى صورة عالية الدقة عبر html2canvas،
  * ونضعها كصفحة واحدة داخل PDF بمقاس A4 Landscape حقيقي (297×210mm).
- *
- * ==== ملاحظة مهمة: لا نستخدم CSS transform للتوسيط ====
- * جُرِّب سابقًا توسيط العناصر بـ left:50%; transform:translateX(-50%)،
- * لكن html2canvas معروف بأخطاء موثّقة عديدة في حساب الصندوق الحدودي
- * الحقيقي للعناصر التي تحمل transform، وهذا كان على الأرجح السبب الحقيقي
- * وراء ظهور اسم الطالب مقصوصًا (حرفان فقط) رغم أن البيانات كانت كاملة.
- * لذلك تم استبدال كل توسيط بـ transform بحساب "left" الصريح بالمليمتر
- * عبر الدالة centeredLeft() أدناه — وهي طريقة توسيط أساسية يدعمها
- * html2canvas بشكل موثوق دائمًا.
- *
- * ==== الإطار الزخرفي ====
- * الإطار (زوايا خضراء بنقش هندسي إسلامي + حدود ذهبية) هو صورة جاهزة
- * (public/certificate-frame.png) وليس مرسومًا بالكود. جميع عناصر النص
- * توضع بحيث تتجنّب الزوايا الأربع المزخرفة للصورة (انظر SAFE ZONE أدناه)
- * حتى لا يتراكب النص مع الزخرفة الخضراء في الزوايا.
  */
 
 import jsPDF from 'jspdf';
@@ -34,45 +19,26 @@ import type { AppSettings, Certificate } from '@/types';
 
 // ===== الهوية البصرية =====
 const COLORS = {
-  darkGreen: '#0B3D2E',
+  darkGreen: '#064E3B',
   medGreen: '#0F6B4F',
-  gold: '#B8892B',
+  gold: '#C9A227',
   lightGold: '#D9B85B',
-  ivory: '#FBF8F0',
+  ivory: '#FAF8F2',
   white: '#FFFFFF',
-  grayText: '#5B5B54',
+  grayText: '#555555',
 } as const;
 
 // مقاس الشهادة المنطقي: A4 أفقي حقيقي.
 const PAGE_W_MM = 297;
 const PAGE_H_MM = 210;
 
-/*
- * ===== SAFE ZONE (منطقة الأمان بعيدًا عن زوايا الإطار) =====
- * الإطار (public/certificate-frame.png) يحتوي على أربع زخارف خضراء
- * مقوّسة في الزوايا الأربع، أقصى امتدادها القطري تقريبًا 50mm أفقيًا
- * و48mm رأسيًا عند حافة الزاوية تمامًا، ويتضاءل الامتداد كلما ابتعدنا
- * عن الزاوية على أي من المحورين.
- *
- * القاعدة العملية المستخدمة هنا: أي عنصر يقع رأسيًا ضمن الشريط العلوي
- * (0→TOP_BAND) أو السفلي (H-TOP_BAND→H) يجب أن يبقى أفقيًا ضمن
- * [SIDE_INSET, W-SIDE_INSET] لضمان عدم تراكبه مع أي زاوية، بغضّ النظر
- * عن ارتفاعه الدقيق ضمن ذلك الشريط. أما الشريط الأوسط (منتصف الصفحة
- * رأسيًا) فآمن بالكامل بعرض الصفحة الكامل.
- */
-const TOP_BAND_MM = 50; // من الأعلى والأسفل
-const SIDE_INSET_MM = 55; // من اليمين واليسار داخل الأشرطة العلوية/السفلية
+// شكل الإطار الزخرفي: لوحة بزوايا مستديرة كبيرة، وزوايا خضراء زخرفية
+// بنفس انحناء الإطار الذهبي (تصميم مستوحى من الشهادات التقليدية).
+const PLAQUE_RADIUS_MM = 26; // انحناء زوايا اللوحة الخارجية
+const CORNER_SIZE_MM = 40;   // حجم كل زاوية خضراء زخرفية
 
 function mm(value: number): string {
   return `${value}mm`;
-}
-
-/** إحداثية "left" بالمليمتر لتوسيط عنصر بعرض معيّن أفقيًا داخل الصفحة،
- *  بدون استخدام CSS transform إطلاقًا (انظر التوضيح في أعلى الملف: html2canvas
- *  له سجل طويل من الأخطاء الموثّقة مع transform قد تُنتج قياس/رسم غير صحيح
- *  للعناصر، وهذا على الأرجح كان السبب الحقيقي وراء قصّ اسم الطالب). */
-function centeredLeft(widthMm: number): number {
-  return (PAGE_W_MM - widthMm) / 2;
 }
 
 function escapeHtml(value: string): string {
@@ -98,48 +64,51 @@ function getDuaText(gender?: 'male' | 'female'): string {
   return 'نسأل الله له / لها دوام التوفيق والسداد، وأن يجعل ما تعلّمه في ميزان حسناته، ويبارك في جهده وعلمه.';
 }
 
-/** نجمة إسلامية ثمانية بسيطة نستخدمها كعنصر زخرفي مركزي صغير */
-function buildEightPointStar(size: number, color: string, opacity = 1): string {
-  const s = size;
-  const c = s / 2;
+/** نقش هندسي إسلامي خفيف يُملأ داخل الزوايا الخضراء (نجمة ثمانية بخطوط ذهبية) */
+function buildCornerPattern(patternId: string): string {
   return `
-    <svg width="${s}mm" height="${s}mm" viewBox="0 0 ${s} ${s}"
-         style="display:block;" xmlns="http://www.w3.org/2000/svg">
-      <g transform="translate(${c},${c})" opacity="${opacity}">
-        <rect x="${-c * 0.62}" y="${-c * 0.62}" width="${c * 1.24}" height="${c * 1.24}"
-              transform="rotate(0)" fill="none" stroke="${color}" stroke-width="${s * 0.035}"/>
-        <rect x="${-c * 0.62}" y="${-c * 0.62}" width="${c * 1.24}" height="${c * 1.24}"
-              transform="rotate(45)" fill="none" stroke="${color}" stroke-width="${s * 0.035}"/>
-      </g>
-    </svg>
+    <pattern id="${patternId}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <path d="M4 0 L8 4 L4 8 L0 4 Z" fill="none" stroke="${COLORS.gold}" stroke-width="0.22" opacity="0.6"/>
+      <circle cx="4" cy="4" r="0.8" fill="none" stroke="${COLORS.gold}" stroke-width="0.16" opacity="0.55"/>
+    </pattern>
   `;
 }
 
-/** شريط زخرفي (خط متدرّج + نجمة + خط متدرّج) بدون flex (انظر ملاحظة
- *  html2canvas في أسفل الملف) — يوضع أسفل عنوان الشهادة مباشرة */
-function buildTitleFlourish(): string {
+/**
+ * زاوية زخرفية خضراء مصمتة بشكل "ربع دائرة" ينحني نحو مركز الشهادة،
+ * وحافتها الخارجية تتبع نفس انحناء إطار اللوحة الذهبي بحيث تندمج معه.
+ */
+function buildCorner(pos: 'tl' | 'tr' | 'bl' | 'br'): string {
+  const cfg: Record<'tl' | 'tr' | 'bl' | 'br', { box: string; radius: string }> = {
+    tl: { box: 'top:5mm;left:5mm;', radius: `${PLAQUE_RADIUS_MM}mm 0 ${CORNER_SIZE_MM}mm 0` },
+    tr: { box: 'top:5mm;right:5mm;', radius: `0 ${PLAQUE_RADIUS_MM}mm 0 ${CORNER_SIZE_MM}mm` },
+    bl: { box: 'bottom:5mm;left:5mm;', radius: `0 ${CORNER_SIZE_MM}mm 0 ${PLAQUE_RADIUS_MM}mm` },
+    br: { box: 'bottom:5mm;right:5mm;', radius: `${CORNER_SIZE_MM}mm 0 ${PLAQUE_RADIUS_MM}mm 0` },
+  };
+  const { box, radius } = cfg[pos];
+  const patternId = `corner-pattern-${pos}`;
+
   return `
-    <div style="text-align:center;white-space:nowrap;margin-top:3mm;line-height:0;">
-      <span style="display:inline-block;vertical-align:middle;width:26mm;height:0.4mm;
-                   background:linear-gradient(90deg,transparent,${COLORS.gold});"></span>
-      <span style="display:inline-block;vertical-align:middle;margin:0 3mm;">${buildEightPointStar(5.5, COLORS.gold, 0.9)}</span>
-      <span style="display:inline-block;vertical-align:middle;width:26mm;height:0.4mm;
-                   background:linear-gradient(270deg,transparent,${COLORS.gold});"></span>
+    <div style="position:absolute;${box}width:${CORNER_SIZE_MM}mm;height:${CORNER_SIZE_MM}mm;
+                background:${COLORS.darkGreen};border-radius:${radius};
+                overflow:hidden;box-sizing:border-box;z-index:1;">
+      <svg width="100%" height="100%" viewBox="0 0 ${CORNER_SIZE_MM} ${CORNER_SIZE_MM}"
+           xmlns="http://www.w3.org/2000/svg">
+        <defs>${buildCornerPattern(patternId)}</defs>
+        <rect width="${CORNER_SIZE_MM}" height="${CORNER_SIZE_MM}" fill="url(#${patternId})"/>
+      </svg>
     </div>
   `;
 }
 
 function buildInfoBadge(label: string, value: string): string {
   return `
-    <div style="width:60mm;box-sizing:border-box;text-align:center;
-                padding:1.5mm 2mm;border-bottom:0.35mm solid ${COLORS.gold};position:relative;">
-      <div style="color:${COLORS.grayText};font-size:4mm;font-weight:700;">${label}</div>
-      <div style="color:${COLORS.darkGreen};font-size:5.4mm;font-weight:700;
-                  margin-top:1.3mm;white-space:nowrap;overflow:hidden;
+    <div style="width:55mm;min-height:20mm;box-sizing:border-box;text-align:center;
+                padding:2mm 3mm;border-bottom:0.35mm solid ${COLORS.gold};">
+      <div style="color:${COLORS.grayText};font-size:4.2mm;font-weight:700;">${label}</div>
+      <div style="color:${COLORS.darkGreen};font-size:5.6mm;font-weight:700;
+                  margin-top:1.5mm;white-space:nowrap;overflow:hidden;
                   text-overflow:ellipsis;" dir="auto">${value}</div>
-      <div style="position:absolute;bottom:-1.1mm;left:${(60 - 1.5) / 2}mm;
-                  width:1.5mm;height:1.5mm;background:${COLORS.gold};
-                  border-radius:50%;"></div>
     </div>
   `;
 }
@@ -150,45 +119,10 @@ interface CertificateAssets {
   appName?: string;
 }
 
-/**
- * يحوّل رابط صورة إلى data URI (base64) مضمّن بالكامل داخل النص.
- *
- * تبقى هذه الخطوة مفيدة حتى بعد التخلي عن foreignObjectRendering: تضمين
- * الصور كـ base64 يزيل أي اعتماد على توقيت تحميل الشبكة قبل التقاط
- * html2canvas للقطة (لا حاجة لانتظار "تحميل" الصورة، فهي جاهزة فورًا ضمن
- * الـ HTML نفسه)، ويحمي من أي مشاكل CORS/تخزين مؤقت محتملة مع روابط
- * خارجية لصورة التوقيع تحديدًا.
- */
-async function toDataUri(url: string): Promise<string> {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return url;
-    const blob = await res.blob();
-    return await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    // في حال فشل التحويل (رابط خارجي محجوب بـ CORS مثلاً) نعيد الرابط
-    // الأصلي كخطة بديلة بدل إفشال توليد الشهادة بالكامل.
-    return url;
-  }
-}
-
 export async function generateCertificatePDF(cert: Certificate, assets: CertificateAssets = {}): Promise<void> {
   const appName = assets.appName || 'زاد الحلقات';
-  const logoUrlRaw = assets.logoUrl && assets.logoUrl.trim() ? assets.logoUrl : '/logo.png';
+  const logoSrc = assets.logoUrl && assets.logoUrl.trim() ? assets.logoUrl : '/logo.png';
   const issueDateFormatted = formatDate(cert.issueDate);
-
-  // نحوّل كل الصور المحلية/الخارجية إلى base64 قبل البناء (انظر توضيح
-  // toDataUri أعلاه) — بالتوازي لتسريع التوليد.
-  const [logoSrc, frameSrc, signatureSrc] = await Promise.all([
-    toDataUri(logoUrlRaw),
-    toDataUri('/certificate-frame.png'),
-    assets.signatureUrl && assets.signatureUrl.trim() ? toDataUri(assets.signatureUrl) : Promise.resolve(''),
-  ]);
 
   const qrPayload = JSON.stringify({
     id: cert.id,
@@ -203,9 +137,9 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
     // فشل توليد QR لا يمنع إصدار الشهادة
   }
 
-  const signatureBlock = signatureSrc
-    ? `<img src="${signatureSrc}" style="width:40mm;height:12mm;object-fit:contain;margin-bottom:1mm;" />`
-    : `<div style="width:40mm;height:12mm;"></div>`;
+  const signatureBlock = assets.signatureUrl && assets.signatureUrl.trim()
+    ? `<img src="${assets.signatureUrl}" style="width:45mm;height:13mm;object-fit:contain;margin-bottom:1mm;" />`
+    : `<div style="width:45mm;height:13mm;"></div>`;
 
   const container = document.createElement('div');
   container.style.position = 'fixed';
@@ -221,129 +155,117 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
 
   container.innerHTML = `
     <div style="width:297mm;height:210mm;box-sizing:border-box;position:relative;
-                background:${COLORS.ivory};overflow:hidden;direction:rtl;color:${COLORS.darkGreen};">
+                background:${COLORS.ivory};overflow:hidden;direction:rtl;color:${COLORS.darkGreen};
+                border-radius:${PLAQUE_RADIUS_MM}mm;">
 
-      <!-- الإطار الزخرفي: صورة جاهزة تغطي الصفحة كاملة (بدون رسم SVG يدوي) -->
-      <img src="${frameSrc}" alt=""
-           style="position:absolute;inset:0;width:297mm;height:210mm;
-                  object-fit:fill;display:block;z-index:0;" />
+      <!-- الإطار الذهبي المزدوج -->
+      <div style="position:absolute;inset:5mm;border:0.8mm solid ${COLORS.gold};
+                  border-radius:${PLAQUE_RADIUS_MM}mm;box-sizing:border-box;pointer-events:none;z-index:2;"></div>
+      <div style="position:absolute;inset:7mm;border:0.35mm solid ${COLORS.gold};
+                  border-radius:${PLAQUE_RADIUS_MM - 2}mm;box-sizing:border-box;pointer-events:none;z-index:2;"></div>
 
-      <!-- طبقة المحتوى فوق الإطار -->
-      <div style="position:absolute;inset:0;z-index:1;">
+      ${buildCorner('tl')}${buildCorner('tr')}${buildCorner('bl')}${buildCorner('br')}
 
-        <!-- البسملة (شريط علوي — عرض ضيق آمن) -->
-        <div style="position:absolute;top:9mm;left:${centeredLeft(110)}mm;
-                    width:110mm;text-align:center;color:${COLORS.gold};
-                    font-family:'Amiri','Cairo',serif;font-size:4.6mm;font-weight:700;
-                    letter-spacing:0.2mm;white-space:nowrap;">
-          بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
-        </div>
-
-        <!-- الشعار واسم المنصة: أعلى المنتصف — عرض ضيق آمن -->
-        <div style="position:absolute;top:15mm;left:${centeredLeft(90)}mm;
-                    width:90mm;display:block;text-align:center;box-sizing:border-box;">
-          <img src="${logoSrc}" alt="شعار ${escapeHtml(appName)}"
-               style="max-width:16mm;max-height:16mm;width:auto;height:auto;
-                      object-fit:contain;display:block;margin:0 auto;" />
-          <div style="color:${COLORS.darkGreen};font-size:4.6mm;font-weight:700;line-height:1;
-                      margin-top:1.5mm;white-space:nowrap;">${escapeHtml(appName)}</div>
-        </div>
-
-        <!-- عنوان الشهادة: وسط الصفحة — عرض آمن ضمن الشريط العلوي -->
-        <div style="position:absolute;top:41mm;left:${centeredLeft(150)}mm;
-                    width:150mm;box-sizing:border-box;text-align:center;">
-          <div style="color:${COLORS.darkGreen};font-family:'Amiri','Cairo',serif;
-                      font-size:13mm;font-weight:700;line-height:1.1;white-space:nowrap;">شهادة إنجاز</div>
-          ${buildTitleFlourish()}
-        </div>
-
-        <!-- النص التمهيدي (داخل الشريط الآمن الأوسط، عرض كامل متاح) -->
-        <div style="position:absolute;top:69mm;left:${centeredLeft(180)}mm;
-                    width:180mm;text-align:center;color:${COLORS.grayText};
-                    font-size:5.2mm;line-height:1.5;box-sizing:border-box;">
-          تشهد منصة ${escapeHtml(appName)} بأن
-        </div>
-
-        <!-- اسم الطالب: أوسع منطقة (الشريط الآمن الأوسط — بلا قيود عرض) -->
-        <!-- ملاحظة: نتجنّب display:flex وأيضًا CSS transform هنا (انظر
-             التوضيح في أعلى الملف) — كلاهما نقطة ضعف موثّقة في html2canvas
-             مع نص عربي متغيّر الحجم، ونعتمد بدلاً منهما على left صريح
-             بالمليمتر + text-align لضمان رسم موثوق. -->
-        <div id="student-name-wrap" style="position:absolute;top:79mm;left:${centeredLeft(230)}mm;
-                    width:230mm;height:24mm;box-sizing:border-box;overflow:hidden;text-align:center;">
-          <div id="student-name" style="color:${COLORS.darkGreen};font-size:14mm;font-weight:700;
-                      line-height:1.2;white-space:normal;word-break:normal;overflow-wrap:break-word;
-                      text-align:center;width:225mm;max-width:225mm;margin:1mm auto 0 auto;
-                      padding:0 2mm;box-sizing:border-box;">
-            ${escapeHtml(cert.studentName)}
-          </div>
-        </div>
-        <div style="position:absolute;top:106mm;left:${centeredLeft(100)}mm;
-                    width:100mm;height:0.4mm;background:linear-gradient(90deg,transparent,
-                    ${COLORS.gold},transparent);"></div>
-
-        <!-- وصف الإنجاز (الشريط الآمن الأوسط) -->
-        <div style="position:absolute;top:110mm;left:${centeredLeft(210)}mm;
-                    width:210mm;text-align:center;box-sizing:border-box;
-                    color:${COLORS.grayText};font-size:5.4mm;line-height:1.4;">
-          <div>قد أتم برنامج</div>
-          <div style="color:${COLORS.darkGreen};font-size:6.6mm;font-weight:700;margin-top:1.3mm;
-                      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" dir="auto">
-            ${escapeHtml(cert.cycleName)}
-          </div>
-        </div>
-
-        <!-- بيانات الإنجاز الثلاثة (الشريط الآمن الأوسط) -->
-        <div style="position:absolute;top:135mm;left:${centeredLeft(200)}mm;
-                    width:200mm;display:flex;justify-content:center;gap:8mm;
-                    box-sizing:border-box;direction:rtl;">
-          ${buildInfoBadge('نسبة الإنجاز', `${cert.progressPercent}%`)}
-          ${buildInfoBadge('رقم الشهادة', escapeHtml(cert.certificateNumber))}
-          ${buildInfoBadge('تاريخ الإصدار', escapeHtml(issueDateFormatted))}
-        </div>
-
-        <!-- دعاء قصير (يبدأ داخل الشريط الآمن الأوسط ويلامس بداية الشريط
-             السفلي، لذا نُبقي عرضه ضمن حدود الأمان الجانبية) -->
-        <div style="position:absolute;top:160mm;left:${centeredLeft(185)}mm;
-                    width:185mm;text-align:center;color:${COLORS.grayText};
-                    font-size:4.6mm;line-height:1.5;box-sizing:border-box;overflow:hidden;">
-          ${escapeHtml(getDuaText(cert.studentGender))}
-        </div>
-
-        <!-- التوقيع + QR: داخل الشريط السفلي — عرض إجمالي محصور ضمن
-             حدود الأمان الجانبية (SIDE_INSET_MM من كل جهة) -->
-        <div style="position:absolute;top:178mm;left:${SIDE_INSET_MM}mm;
-                    width:${PAGE_W_MM - SIDE_INSET_MM * 2}mm;height:24mm;
-                    box-sizing:border-box;display:flex;align-items:flex-end;
-                    justify-content:space-between;direction:rtl;">
-
-          <!-- التوقيع (جهة اليمين في العربية) -->
-          <div style="width:50mm;text-align:center;direction:rtl;box-sizing:border-box;">
-            <div style="color:${COLORS.grayText};font-size:3.6mm;margin-bottom:0.5mm;">التوقيع</div>
-            ${signatureBlock}
-            <div style="width:40mm;margin:0 auto;border-top:0.3mm solid ${COLORS.grayText};
-                        padding-top:0.7mm;font-size:3.8mm;color:${COLORS.darkGreen};
-                        font-weight:700;box-sizing:border-box;">${escapeHtml(appName)}</div>
-          </div>
-
-          <!-- الـ QR (جهة اليسار في العربية) -->
-          <div style="display:flex;align-items:center;justify-content:center;
-                      direction:rtl;box-sizing:border-box;gap:3.5mm;">
-            <div style="width:22mm;height:22mm;border:0.3mm solid ${COLORS.gold};padding:1mm;
-                        box-sizing:border-box;display:flex;align-items:center;justify-content:center;background:#fff;">
-              ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" style="width:19mm;height:19mm;display:block;" />` : ''}
-            </div>
-            <div style="width:26mm;text-align:right;box-sizing:border-box;">
-              <div style="font-size:3.1mm;color:${COLORS.grayText};line-height:1.4;">تحقق من صحة الشهادة</div>
-              <div style="font-size:3.6mm;color:${COLORS.darkGreen};font-weight:700;
-                          margin-top:0.8mm;line-height:1.3;word-break:break-word;" dir="ltr">
-                ${escapeHtml(cert.certificateNumber)}
-              </div>
-            </div>
-          </div>
-        </div>
-
+      <!-- الشعار: أعلى منتصف الصفحة، بعيدًا عن الزوايا الزخرفية -->
+      <div style="position:absolute;top:9mm;left:50%;transform:translateX(-50%);
+                  width:70mm;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+                  box-sizing:border-box;z-index:3;">
+        <img src="${logoSrc}" alt="شعار ${escapeHtml(appName)}"
+             style="max-width:26mm;max-height:16mm;width:auto;height:auto;object-fit:contain;
+                    display:block;" />
+        <div style="color:${COLORS.darkGreen};font-size:5.4mm;font-weight:700;line-height:1;
+                    margin-top:1.5mm;white-space:nowrap;">${escapeHtml(appName)}</div>
       </div>
+
+      <!-- عنوان الشهادة: وسط الصفحة -->
+      <div style="position:absolute;top:38mm;left:50%;transform:translateX(-50%);
+                  width:150mm;height:22mm;display:flex;flex-direction:column;align-items:center;
+                  justify-content:flex-start;box-sizing:border-box;z-index:3;">
+        <div style="color:${COLORS.darkGreen};font-size:14mm;font-weight:700;
+                    line-height:1.1;white-space:nowrap;">شهادة إنجاز</div>
+        <div style="width:48mm;height:0.5mm;background:${COLORS.gold};margin-top:5mm;"></div>
+      </div>
+
+      <!-- النص التمهيدي -->
+      <div style="position:absolute;top:64mm;left:50%;transform:translateX(-50%);
+                  width:180mm;height:9mm;text-align:center;color:${COLORS.grayText};
+                  font-size:5.5mm;line-height:1.5;box-sizing:border-box;z-index:3;">
+        تشهد منصة ${escapeHtml(appName)} بأن
+      </div>
+
+      <!-- اسم الطالب -->
+      <div style="position:absolute;top:74mm;left:50%;transform:translateX(-50%);
+                  width:220mm;height:25mm;display:flex;align-items:center;justify-content:center;
+                  box-sizing:border-box;overflow:hidden;z-index:3;">
+        <div id="student-name" style="color:${COLORS.darkGreen};font-size:15mm;font-weight:700;
+                    line-height:1.15;white-space:normal;word-break:keep-all;overflow-wrap:normal;
+                    text-align:center;width:220mm;max-width:220mm;height:25mm;
+                    padding:0 2mm;box-sizing:border-box;overflow:hidden;">
+          ${escapeHtml(cert.studentName)}
+        </div>
+      </div>
+      <div style="position:absolute;top:100mm;left:50%;transform:translateX(-50%);
+                  width:105mm;height:0.45mm;background:linear-gradient(90deg,transparent,
+                  ${COLORS.gold},transparent);z-index:3;"></div>
+
+      <!-- وصف الإنجاز -->
+      <div style="position:absolute;top:104mm;left:50%;transform:translateX(-50%);
+                  width:220mm;height:21mm;text-align:center;box-sizing:border-box;
+                  color:${COLORS.grayText};font-size:5.8mm;line-height:1.45;z-index:3;">
+        <div>قد أتم برنامج</div>
+        <div style="color:${COLORS.darkGreen};font-size:7mm;font-weight:700;margin-top:1.5mm;
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" dir="auto">
+          ${escapeHtml(cert.cycleName)}
+        </div>
+      </div>
+
+      <!-- بيانات الإنجاز الثلاثة -->
+      <div style="position:absolute;top:129mm;left:50%;transform:translateX(-50%);
+                  width:181mm;height:27mm;display:flex;justify-content:center;gap:8mm;
+                  box-sizing:border-box;direction:rtl;z-index:3;">
+        ${buildInfoBadge('نسبة الإنجاز', `${cert.progressPercent}%`)}
+        ${buildInfoBadge('رقم الشهادة', escapeHtml(cert.certificateNumber))}
+        ${buildInfoBadge('تاريخ الإصدار', escapeHtml(issueDateFormatted))}
+      </div>
+
+      <!-- دعاء قصير -->
+      <div style="position:absolute;top:154mm;left:50%;transform:translateX(-50%);
+                  width:200mm;height:11mm;text-align:center;color:${COLORS.grayText};
+                  font-size:5.2mm;line-height:1.55;box-sizing:border-box;overflow:hidden;z-index:3;">
+        ${escapeHtml(getDuaText(cert.studentGender))}
+      </div>
+
+      <!-- المنطقة السفلية: التوقيع يمينًا، والـQR والختم يسارًا (بعيدًا عن الزوايا الزخرفية) -->
+      <div style="position:absolute;top:172mm;left:48mm;right:48mm;height:26mm;
+                  box-sizing:border-box;display:flex;align-items:flex-end;
+                  justify-content:space-between;direction:rtl;z-index:3;">
+
+        <!-- التوقيع (جهة اليمين في العربية) -->
+        <div style="width:55mm;height:26mm;text-align:center;direction:rtl;box-sizing:border-box;">
+          <div style="color:${COLORS.grayText};font-size:3.8mm;margin-bottom:0.5mm;">التوقيع</div>
+          ${signatureBlock}
+          <div style="width:45mm;margin:0 auto;border-top:0.3mm solid ${COLORS.grayText};
+                      padding-top:0.8mm;font-size:4mm;color:${COLORS.darkGreen};
+                      font-weight:700;box-sizing:border-box;">${escapeHtml(appName)}</div>
+        </div>
+
+        <!-- الـ QR (جهة اليسار في العربية) -->
+        <div style="width:55mm;height:26mm;display:flex;align-items:center;justify-content:center;
+                    direction:rtl;box-sizing:border-box;gap:4mm;">
+          <div style="width:25mm;height:25mm;border:0.3mm solid ${COLORS.gold};padding:1mm;
+                      box-sizing:border-box;display:flex;align-items:center;justify-content:center;background:#fff;">
+            ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" style="width:22mm;height:22mm;display:block;" />` : ''}
+          </div>
+          <div style="width:26mm;text-align:right;box-sizing:border-box;">
+            <div style="font-size:3.3mm;color:${COLORS.grayText};line-height:1.5;">تحقق من صحة الشهادة</div>
+            <div style="font-size:3.8mm;color:${COLORS.darkGreen};font-weight:700;
+                        margin-top:1mm;line-height:1.4;word-break:break-word;" dir="ltr">
+              ${escapeHtml(cert.certificateNumber)}
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   `;
 
@@ -354,32 +276,25 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
       await document.fonts.ready;
     }
 
-    // Auto-fit لاسم الطالب ضمن صندوق ثابت الحجم (230mm × 26mm، overflow:hidden).
-    // المقياس الصحيح هو صندوق الالتفاف الخارجي الثابت الحجم وليس العنصر الداخلي
-    // نفسه (الذي يتمدد تلقائيًا مع محتواه ولذلك لا يكشف الفائض أبدًا).
-    const wrapEl = container.querySelector<HTMLElement>('#student-name-wrap');
+    // Auto-fit لاسم الطالب: نقيس محتوى العنصر (id=student-name) مقابل
+    // صندوقه الثابت (220mm × 25mm) نفسه، لا مقابل صندوق أب مرن — لأن
+    // العنصر بلا ارتفاع ثابت كان يكبر مع محتواه فتبدو المقارنة "مطابقة"
+    // دائمًا بينما يقص القسم الأب الاسم الفعلي عبر overflow:hidden.
     const studentNameEl = container.querySelector<HTMLElement>('#student-name');
-    if (wrapEl && studentNameEl) {
-      let fontSize = 14;
+    if (studentNameEl) {
+      let fontSize = 15;
       const minFont = 6;
       studentNameEl.style.fontSize = `${fontSize}mm`;
 
       while (fontSize > minFont) {
-        const overflowing = wrapEl.scrollHeight > wrapEl.clientHeight + 1
-          || wrapEl.scrollWidth > wrapEl.clientWidth + 1;
-        if (!overflowing) break;
+        const fitsWidth = studentNameEl.scrollWidth <= studentNameEl.clientWidth + 2;
+        const fitsHeight = studentNameEl.scrollHeight <= studentNameEl.clientHeight + 2;
+        if (fitsWidth && fitsHeight) break;
         fontSize -= 0.5;
         studentNameEl.style.fontSize = `${fontSize}mm`;
       }
     }
 
-    // ملاحظة: تخلّينا عن foreignObjectRendering نهائيًا — أثبتت التجربة
-    // الفعلية أنه غير موثوق في بيئات نشر معيّنة (يُنتج صفحة بيضاء فارغة
-    // تمامًا لأسباب يصعب تشخيصها عن بُعد). المسار الافتراضي لـ html2canvas
-    // (بدونه) كان يعمل بنجاح دائمًا لكل عنصر آخر في هذه الشهادة؛ والسبب
-    // الحقيقي وراء قصّ اسم الطالب تحديدًا كان على الأرجح استخدام CSS
-    // transform للتوسيط (انظر centeredLeft أعلى الملف وملاحظة رأس الملف)
-    // — وقد أُزيل تمامًا الآن من كل عناصر الشهادة.
     const canvas = await html2canvas(container, {
       scale: 3,
       backgroundColor: COLORS.ivory,
