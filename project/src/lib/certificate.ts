@@ -156,9 +156,19 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
     : `<div style="width:40mm;height:12mm;"></div>`;
 
   const container = document.createElement('div');
+  // ملاحظة حاسمة: مع foreignObjectRendering:true، يعتمد html2canvas على محرك
+  // رسم SVG/foreignObject الحقيقي في المتصفح، وهذا المحرك لا يرسم بشكل
+  // صحيح (يُنتج صفحة بيضاء فارغة) إذا كان العنصر خارج حدود نافذة العرض
+  // (viewport) تمامًا كما كان الحال سابقًا مع left:-99999px، أو إذا كانت
+  // شفافيته (opacity) صفرًا (لأن المحرك يرسم الشكل المرئي فعليًا وليس
+  // نسخة منطقية منه). لذلك نُبقي العنصر ضمن إحداثيات الشاشة (top:0, left:0)
+  // بشفافية كاملة (opacity:1) ونُخفيه فقط عبر z-index سالب (خلف كل محتوى
+  // الصفحة الفعلي) مع pointer-events:none حتى لا يظهر أو يتفاعل مع المستخدم.
   container.style.position = 'fixed';
   container.style.top = '0';
-  container.style.left = '-99999px';
+  container.style.left = '0';
+  container.style.zIndex = '-9999';
+  container.style.pointerEvents = 'none';
   container.style.width = mm(PAGE_W_MM);
   container.style.height = mm(PAGE_H_MM);
   container.style.boxSizing = 'border-box';
@@ -320,21 +330,45 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
       }
     }
 
-    // ملاحظة حاسمة: foreignObjectRendering:true إلزامي هنا. بدونه، يستخدم
-    // html2canvas خوارزمية داخلية خاصة به لقياس ورسم كل حرف على حدة عبر
-    // canvas.fillText، وهذه الخوارزمية ضعيفة جدًا مع النص العربي المتصل
-    // (Arabic shaping) وتتسبب بقصّ النص بعد أول حرفين أو ثلاثة بلا أي خطأ
-    // ظاهر. بتفعيل foreignObjectRendering يُستخدم <foreignObject> داخل SVG
-    // فيرسم المتصفح نفسه HTML الحقيقي (بتشكيل عربي سليم) بدل محرك الرسم
-    // اليدوي لـ html2canvas.
-    const canvas = await html2canvas(container, {
-      scale: 3,
-      backgroundColor: COLORS.ivory,
-      useCORS: true,
-      allowTaint: false,
-      foreignObjectRendering: true,
-      logging: false,
-    });
+    // ملاحظة حاسمة: foreignObjectRendering:true إلزامي هنا لحل مشكلة قصّ
+    // الاسم العربي (انظر التعليق أعلاه). لكن بعض المتصفحات/البيئات قد
+    // تُخرج صفحة بيضاء فارغة مع هذا الخيار لأسباب أخرى غير متوقعة، لذلك
+    // نتحقق من الناتج: إن كانت الصورة فارغة فعليًا (كل البكسلات متطابقة
+    // تقريبًا مع لون الخلفية) نُعيد المحاولة بدونه كخطة بديلة، حتى لا
+    // يحصل المستخدم على شهادة فارغة بأي حال.
+    async function renderCanvas(useForeignObject: boolean) {
+      return html2canvas(container, {
+        scale: 3,
+        backgroundColor: COLORS.ivory,
+        useCORS: true,
+        allowTaint: false,
+        foreignObjectRendering: useForeignObject,
+        logging: false,
+      });
+    }
+
+    function isCanvasBlank(canvas: HTMLCanvasElement): boolean {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return false;
+      const w = canvas.width;
+      const h = canvas.height;
+      const samplePoints = [
+        [Math.floor(w * 0.3), Math.floor(h * 0.4)],
+        [Math.floor(w * 0.5), Math.floor(h * 0.4)],
+        [Math.floor(w * 0.5), Math.floor(h * 0.55)],
+        [Math.floor(w * 0.3), Math.floor(h * 0.65)],
+      ];
+      return samplePoints.every(([x, y]) => {
+        const [r, g, b] = ctx.getImageData(x, y, 1, 1).data;
+        // نعتبر البكسل "خلفية فارغة" إن كان قريبًا جدًا من لون العاج (ivory)
+        return r > 245 && g > 240 && b > 225;
+      });
+    }
+
+    let canvas = await renderCanvas(true);
+    if (isCanvasBlank(canvas)) {
+      canvas = await renderCanvas(false);
+    }
     const imgData = canvas.toDataURL('image/png');
 
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
