@@ -11,6 +11,15 @@
  * واتجاه RTL بشكل تلقائي)، ثم نحوّله إلى صورة عالية الدقة عبر html2canvas،
  * ونضعها كصفحة واحدة داخل PDF بمقاس A4 Landscape حقيقي (297×210mm).
  *
+ * ==== ملاحظة مهمة: لا نستخدم CSS transform للتوسيط ====
+ * جُرِّب سابقًا توسيط العناصر بـ left:50%; transform:translateX(-50%)،
+ * لكن html2canvas معروف بأخطاء موثّقة عديدة في حساب الصندوق الحدودي
+ * الحقيقي للعناصر التي تحمل transform، وهذا كان على الأرجح السبب الحقيقي
+ * وراء ظهور اسم الطالب مقصوصًا (حرفان فقط) رغم أن البيانات كانت كاملة.
+ * لذلك تم استبدال كل توسيط بـ transform بحساب "left" الصريح بالمليمتر
+ * عبر الدالة centeredLeft() أدناه — وهي طريقة توسيط أساسية يدعمها
+ * html2canvas بشكل موثوق دائمًا.
+ *
  * ==== الإطار الزخرفي ====
  * الإطار (زوايا خضراء بنقش هندسي إسلامي + حدود ذهبية) هو صورة جاهزة
  * (public/certificate-frame.png) وليس مرسومًا بالكود. جميع عناصر النص
@@ -56,6 +65,14 @@ const SIDE_INSET_MM = 55; // من اليمين واليسار داخل الأش�
 
 function mm(value: number): string {
   return `${value}mm`;
+}
+
+/** إحداثية "left" بالمليمتر لتوسيط عنصر بعرض معيّن أفقيًا داخل الصفحة،
+ *  بدون استخدام CSS transform إطلاقًا (انظر التوضيح في أعلى الملف: html2canvas
+ *  له سجل طويل من الأخطاء الموثّقة مع transform قد تُنتج قياس/رسم غير صحيح
+ *  للعناصر، وهذا على الأرجح كان السبب الحقيقي وراء قصّ اسم الطالب). */
+function centeredLeft(widthMm: number): number {
+  return (PAGE_W_MM - widthMm) / 2;
 }
 
 function escapeHtml(value: string): string {
@@ -120,7 +137,7 @@ function buildInfoBadge(label: string, value: string): string {
       <div style="color:${COLORS.darkGreen};font-size:5.4mm;font-weight:700;
                   margin-top:1.3mm;white-space:nowrap;overflow:hidden;
                   text-overflow:ellipsis;" dir="auto">${value}</div>
-      <div style="position:absolute;bottom:-1.1mm;left:50%;transform:translateX(-50%);
+      <div style="position:absolute;bottom:-1.1mm;left:${(60 - 1.5) / 2}mm;
                   width:1.5mm;height:1.5mm;background:${COLORS.gold};
                   border-radius:50%;"></div>
     </div>
@@ -136,15 +153,11 @@ interface CertificateAssets {
 /**
  * يحوّل رابط صورة إلى data URI (base64) مضمّن بالكامل داخل النص.
  *
- * لماذا هذا ضروري: مع foreignObjectRendering:true (المطلوب لحل مشكلة قصّ
- * النص العربي)، لا يقوم html2canvas بتصوير الصفحة الحيّة، بل "يُسلسل"
- * الشهادة إلى صورة SVG مستقلة قائمة بذاتها (data:image/svg+xml...) ثم
- * يحمّلها كصورة جديدة تمامًا منفصلة عن الصفحة. الصور المستقلة هذه ليس
- * لها "رابط أساس" (base URL) لحلّ المسارات النسبية مثل "/logo.png" أو
- * "/certificate-frame.png" — فتفشل هذه الموارد بالتحميل بصمت، وبما أن
- * صورة الإطار تغطي كامل الشهادة، فإن فشلها وحده يجعل الناتج صفحة بيضاء
- * فارغة تمامًا. الحل: تحويل كل صورة محلية إلى base64 مضمّن في نص الصفحة
- * نفسه قبل البناء، بحيث لا حاجة لتحميل أي رابط خارجي أو نسبي إطلاقًا.
+ * تبقى هذه الخطوة مفيدة حتى بعد التخلي عن foreignObjectRendering: تضمين
+ * الصور كـ base64 يزيل أي اعتماد على توقيت تحميل الشبكة قبل التقاط
+ * html2canvas للقطة (لا حاجة لانتظار "تحميل" الصورة، فهي جاهزة فورًا ضمن
+ * الـ HTML نفسه)، ويحمي من أي مشاكل CORS/تخزين مؤقت محتملة مع روابط
+ * خارجية لصورة التوقيع تحديدًا.
  */
 async function toDataUri(url: string): Promise<string> {
   try {
@@ -195,19 +208,9 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
     : `<div style="width:40mm;height:12mm;"></div>`;
 
   const container = document.createElement('div');
-  // ملاحظة حاسمة: مع foreignObjectRendering:true، يعتمد html2canvas على محرك
-  // رسم SVG/foreignObject الحقيقي في المتصفح، وهذا المحرك لا يرسم بشكل
-  // صحيح (يُنتج صفحة بيضاء فارغة) إذا كان العنصر خارج حدود نافذة العرض
-  // (viewport) تمامًا كما كان الحال سابقًا مع left:-99999px، أو إذا كانت
-  // شفافيته (opacity) صفرًا (لأن المحرك يرسم الشكل المرئي فعليًا وليس
-  // نسخة منطقية منه). لذلك نُبقي العنصر ضمن إحداثيات الشاشة (top:0, left:0)
-  // بشفافية كاملة (opacity:1) ونُخفيه فقط عبر z-index سالب (خلف كل محتوى
-  // الصفحة الفعلي) مع pointer-events:none حتى لا يظهر أو يتفاعل مع المستخدم.
   container.style.position = 'fixed';
   container.style.top = '0';
-  container.style.left = '0';
-  container.style.zIndex = '-9999';
-  container.style.pointerEvents = 'none';
+  container.style.left = '-99999px';
   container.style.width = mm(PAGE_W_MM);
   container.style.height = mm(PAGE_H_MM);
   container.style.boxSizing = 'border-box';
@@ -229,7 +232,7 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
       <div style="position:absolute;inset:0;z-index:1;">
 
         <!-- البسملة (شريط علوي — عرض ضيق آمن) -->
-        <div style="position:absolute;top:9mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:9mm;left:${centeredLeft(110)}mm;
                     width:110mm;text-align:center;color:${COLORS.gold};
                     font-family:'Amiri','Cairo',serif;font-size:4.6mm;font-weight:700;
                     letter-spacing:0.2mm;white-space:nowrap;">
@@ -237,7 +240,7 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
         </div>
 
         <!-- الشعار واسم المنصة: أعلى المنتصف — عرض ضيق آمن -->
-        <div style="position:absolute;top:15mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:15mm;left:${centeredLeft(90)}mm;
                     width:90mm;display:block;text-align:center;box-sizing:border-box;">
           <img src="${logoSrc}" alt="شعار ${escapeHtml(appName)}"
                style="max-width:16mm;max-height:16mm;width:auto;height:auto;
@@ -247,7 +250,7 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
         </div>
 
         <!-- عنوان الشهادة: وسط الصفحة — عرض آمن ضمن الشريط العلوي -->
-        <div style="position:absolute;top:41mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:41mm;left:${centeredLeft(150)}mm;
                     width:150mm;box-sizing:border-box;text-align:center;">
           <div style="color:${COLORS.darkGreen};font-family:'Amiri','Cairo',serif;
                       font-size:13mm;font-weight:700;line-height:1.1;white-space:nowrap;">شهادة إنجاز</div>
@@ -255,17 +258,18 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
         </div>
 
         <!-- النص التمهيدي (داخل الشريط الآمن الأوسط، عرض كامل متاح) -->
-        <div style="position:absolute;top:69mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:69mm;left:${centeredLeft(180)}mm;
                     width:180mm;text-align:center;color:${COLORS.grayText};
                     font-size:5.2mm;line-height:1.5;box-sizing:border-box;">
           تشهد منصة ${escapeHtml(appName)} بأن
         </div>
 
         <!-- اسم الطالب: أوسع منطقة (الشريط الآمن الأوسط — بلا قيود عرض) -->
-        <!-- ملاحظة: نتجنّب display:flex هنا لأن html2canvas يسيء التعامل معه
-             مع نص عربي متغيّر الحجم ديناميكيًا، ونعتمد بدلاً منه على
-             text-align لضمان رسم موثوق (نفس أسلوب بقية عناصر الشهادة). -->
-        <div id="student-name-wrap" style="position:absolute;top:79mm;left:50%;transform:translateX(-50%);
+        <!-- ملاحظة: نتجنّب display:flex وأيضًا CSS transform هنا (انظر
+             التوضيح في أعلى الملف) — كلاهما نقطة ضعف موثّقة في html2canvas
+             مع نص عربي متغيّر الحجم، ونعتمد بدلاً منهما على left صريح
+             بالمليمتر + text-align لضمان رسم موثوق. -->
+        <div id="student-name-wrap" style="position:absolute;top:79mm;left:${centeredLeft(230)}mm;
                     width:230mm;height:24mm;box-sizing:border-box;overflow:hidden;text-align:center;">
           <div id="student-name" style="color:${COLORS.darkGreen};font-size:14mm;font-weight:700;
                       line-height:1.2;white-space:normal;word-break:normal;overflow-wrap:break-word;
@@ -274,12 +278,12 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
             ${escapeHtml(cert.studentName)}
           </div>
         </div>
-        <div style="position:absolute;top:106mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:106mm;left:${centeredLeft(100)}mm;
                     width:100mm;height:0.4mm;background:linear-gradient(90deg,transparent,
                     ${COLORS.gold},transparent);"></div>
 
         <!-- وصف الإنجاز (الشريط الآمن الأوسط) -->
-        <div style="position:absolute;top:110mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:110mm;left:${centeredLeft(210)}mm;
                     width:210mm;text-align:center;box-sizing:border-box;
                     color:${COLORS.grayText};font-size:5.4mm;line-height:1.4;">
           <div>قد أتم برنامج</div>
@@ -290,7 +294,7 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
         </div>
 
         <!-- بيانات الإنجاز الثلاثة (الشريط الآمن الأوسط) -->
-        <div style="position:absolute;top:135mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:135mm;left:${centeredLeft(200)}mm;
                     width:200mm;display:flex;justify-content:center;gap:8mm;
                     box-sizing:border-box;direction:rtl;">
           ${buildInfoBadge('نسبة الإنجاز', `${cert.progressPercent}%`)}
@@ -300,7 +304,7 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
 
         <!-- دعاء قصير (يبدأ داخل الشريط الآمن الأوسط ويلامس بداية الشريط
              السفلي، لذا نُبقي عرضه ضمن حدود الأمان الجانبية) -->
-        <div style="position:absolute;top:160mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:160mm;left:${centeredLeft(185)}mm;
                     width:185mm;text-align:center;color:${COLORS.grayText};
                     font-size:4.6mm;line-height:1.5;box-sizing:border-box;overflow:hidden;">
           ${escapeHtml(getDuaText(cert.studentGender))}
@@ -308,7 +312,7 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
 
         <!-- التوقيع + QR: داخل الشريط السفلي — عرض إجمالي محصور ضمن
              حدود الأمان الجانبية (SIDE_INSET_MM من كل جهة) -->
-        <div style="position:absolute;top:178mm;left:50%;transform:translateX(-50%);
+        <div style="position:absolute;top:178mm;left:${SIDE_INSET_MM}mm;
                     width:${PAGE_W_MM - SIDE_INSET_MM * 2}mm;height:24mm;
                     box-sizing:border-box;display:flex;align-items:flex-end;
                     justify-content:space-between;direction:rtl;">
@@ -369,45 +373,19 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
       }
     }
 
-    // ملاحظة حاسمة: foreignObjectRendering:true إلزامي هنا لحل مشكلة قصّ
-    // الاسم العربي (انظر التعليق أعلاه). لكن بعض المتصفحات/البيئات قد
-    // تُخرج صفحة بيضاء فارغة مع هذا الخيار لأسباب أخرى غير متوقعة، لذلك
-    // نتحقق من الناتج: إن كانت الصورة فارغة فعليًا (كل البكسلات متطابقة
-    // تقريبًا مع لون الخلفية) نُعيد المحاولة بدونه كخطة بديلة، حتى لا
-    // يحصل المستخدم على شهادة فارغة بأي حال.
-    async function renderCanvas(useForeignObject: boolean) {
-      return html2canvas(container, {
-        scale: 3,
-        backgroundColor: COLORS.ivory,
-        useCORS: true,
-        allowTaint: false,
-        foreignObjectRendering: useForeignObject,
-        logging: false,
-      });
-    }
-
-    function isCanvasBlank(canvas: HTMLCanvasElement): boolean {
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return false;
-      const w = canvas.width;
-      const h = canvas.height;
-      const samplePoints = [
-        [Math.floor(w * 0.3), Math.floor(h * 0.4)],
-        [Math.floor(w * 0.5), Math.floor(h * 0.4)],
-        [Math.floor(w * 0.5), Math.floor(h * 0.55)],
-        [Math.floor(w * 0.3), Math.floor(h * 0.65)],
-      ];
-      return samplePoints.every(([x, y]) => {
-        const [r, g, b] = ctx.getImageData(x, y, 1, 1).data;
-        // نعتبر البكسل "خلفية فارغة" إن كان قريبًا جدًا من لون العاج (ivory)
-        return r > 245 && g > 240 && b > 225;
-      });
-    }
-
-    let canvas = await renderCanvas(true);
-    if (isCanvasBlank(canvas)) {
-      canvas = await renderCanvas(false);
-    }
+    // ملاحظة: تخلّينا عن foreignObjectRendering نهائيًا — أثبتت التجربة
+    // الفعلية أنه غير موثوق في بيئات نشر معيّنة (يُنتج صفحة بيضاء فارغة
+    // تمامًا لأسباب يصعب تشخيصها عن بُعد). المسار الافتراضي لـ html2canvas
+    // (بدونه) كان يعمل بنجاح دائمًا لكل عنصر آخر في هذه الشهادة؛ والسبب
+    // الحقيقي وراء قصّ اسم الطالب تحديدًا كان على الأرجح استخدام CSS
+    // transform للتوسيط (انظر centeredLeft أعلى الملف وملاحظة رأس الملف)
+    // — وقد أُزيل تمامًا الآن من كل عناصر الشهادة.
+    const canvas = await html2canvas(container, {
+      scale: 3,
+      backgroundColor: COLORS.ivory,
+      useCORS: true,
+      logging: false,
+    });
     const imgData = canvas.toDataURL('image/png');
 
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
