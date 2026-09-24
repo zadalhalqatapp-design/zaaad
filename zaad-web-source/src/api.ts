@@ -1,0 +1,233 @@
+import { APPS_CONFIG } from '@/config';
+import type { ApiResponse, Session, User, Hadith, Book, BookAssignment, Achievement, ProgressRecord, DailyLesson, Cycle, Certificate, Message, Notification, DashboardData, AppSettings, OperationLog, Backup } from '@/types';
+
+type AnyData = Record<string, unknown> | unknown[] | string | number | boolean | null | object;
+
+export class ApiError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+  }
+}
+
+// ===== ذاكرة مؤقتة قصيرة لطلبات القراءة (GET) =====
+// كل طلب لـ Apps Script له كلفة زمنية شبه ثابتة (نصف ثانية إلى ثانيتين تقريبًا) بصرف النظر
+// عن حجم البيانات المطلوبة؛ بدون هذه الذاكرة، كل تنقّل بين صفحتين يعيد تحميل كل شيء من
+// الصفر حتى لو لم يتغيّر شيء منذ ثوانٍ. أي طلب تعديل (POST) ينجح يُفرغ الذاكرة بالكامل
+// فورًا، فتُجلب البيانات الحديثة في أول طلب قراءة تالٍ — لا يبقى شيء قديمًا لأكثر من مدة
+// TTL القصيرة. المفتاح يتضمّن التوكن الحالي فلا تختلط بيانات مستخدم بآخر عند تبديل الحساب.
+const READ_CACHE_TTL_MS = 20_000;
+const readCache = new Map<string, { data: unknown; at: number }>();
+
+function readCacheKey(token: string | null, action: string, payload: Record<string, unknown>): string {
+  return `${token ?? ''}|${action}|${JSON.stringify(payload)}`;
+}
+
+/** تُستدعى بعد أي طلب تعديل ناجح — انظر التعليق أعلاه. */
+function clearReadCache() {
+  readCache.clear();
+}
+
+async function request<T extends AnyData>(
+  action: string,
+  payload: Record<string, unknown> = {},
+  method: 'GET' | 'POST' = 'POST',
+): Promise<T> {
+  if (!APPS_CONFIG.APPS_SCRIPT_URL) {
+    throw new ApiError(
+      'لم يتم ضبط رابط Google Apps Script. يرجى إضافته في ملف .env باسم VITE_APPS_SCRIPT_URL.',
+      'NOT_CONFIGURED',
+    );
+  }
+
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem(APPS_CONFIG.SESSION_KEY) : null;
+  let tokenValue: string | null = null;
+  if (token) {
+    try {
+      tokenValue = (JSON.parse(token) as { token?: string }).token ?? null;
+    } catch {
+      tokenValue = null;
+    }
+  }
+
+  const cacheKey = method === 'GET' ? readCacheKey(tokenValue, action, payload) : null;
+  if (cacheKey) {
+    const hit = readCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < READ_CACHE_TTL_MS) {
+      return hit.data as T;
+    }
+  }
+
+  try {
+    let response: Response;
+    const body = JSON.stringify({ action, ...payload, token: tokenValue });
+
+    if (method === 'GET') {
+      const params = new URLSearchParams({ payload: body });
+      response = await fetch(`${APPS_CONFIG.APPS_SCRIPT_URL}?${params.toString()}`, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      });
+    } else {
+      response = await fetch(APPS_CONFIG.APPS_SCRIPT_URL, {
+        method: 'POST',
+        redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body,
+      });
+    }
+
+    const text = await response.text();
+    let json: ApiResponse<T>;
+    try {
+      json = JSON.parse(text) as ApiResponse<T>;
+    } catch {
+      console.error('[API] Parse error for action:', action, '| Raw response:', text.slice(0, 500));
+      throw new ApiError('استجابة غير صالحة من الخادم.', 'PARSE_ERROR');
+    }
+
+    if (!json.success) {
+      console.error('[API] Server error for action:', action, '| Error:', json.error, '| Code:', json.code);
+      throw new ApiError(json.error || 'حدث خطأ في الخادم.', json.code);
+    }
+    if (cacheKey) {
+      readCache.set(cacheKey, { data: json.data, at: Date.now() });
+    } else {
+      clearReadCache();
+    }
+    return json.data;
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    console.error('[API] Network error for action:', action, '| Error:', err);
+    throw new ApiError(
+      'تعذّر الاتصال بالخادم. تحقق من الاتصال بالإنترنت أو رابط Apps Script.',
+      'NETWORK_ERROR',
+    );
+  }
+}
+
+export interface LoginResponse {
+  session: Session;
+  user: User;
+}
+
+export const api = {
+  // Auth
+  login: (email: string, password: string) =>
+    request<LoginResponse>('login', { email, password }),
+  register: (data: { name: string; email: string; password: string; phone?: string; gender: 'male' | 'female' }) =>
+    request('register', data),
+  logout: () => request('logout', {}),
+  verifySession: (token: string) => request<LoginResponse>('verifySession', { token }),
+
+  // Students
+  getStudents: () => request<User[]>('getStudents', {}, 'GET'),
+  approveStudent: (studentId: string) => request('approveStudent', { studentId }),
+  rejectStudent: (studentId: string, reason: string) => request('rejectStudent', { studentId, reason }),
+  suspendStudent: (studentId: string, reason: string) => request('suspendStudent', { studentId, reason }),
+  reinstateStudent: (studentId: string) => request('reinstateStudent', { studentId }),
+  updateStudent: (studentId: string, data: Record<string, unknown>) =>
+    request('updateStudent', { studentId, data }),
+  deleteStudent: (studentId: string) => request('deleteStudent', { studentId }),
+
+  // Supervisors
+  getSupervisors: () => request<User[]>('getSupervisors', {}, 'GET'),
+  addSupervisor: (data: { name: string; email: string; password: string; phone?: string; cycleIds?: string[] }) =>
+    request('addSupervisor', data),
+  updateSupervisor: (id: string, data: Record<string, unknown>) =>
+    request('updateSupervisor', { id, data }),
+  deleteSupervisor: (id: string) => request('deleteSupervisor', { id }),
+
+  // Admins
+  getAdmins: () => request<User[]>('getAdmins', {}, 'GET'),
+  addAdmin: (data: { name: string; email: string; password: string; phone?: string }) =>
+    request('addAdmin', data),
+  updateAdmin: (id: string, data: Record<string, unknown>) => request('updateAdmin', { id, data }),
+  deleteAdmin: (id: string) => request('deleteAdmin', { id }),
+
+  // Hadiths
+  getHadiths: (bookId?: string) => request<Hadith[]>('getHadiths', { bookId }, 'GET'),
+  getHadith: (hadithId: string) => request<Hadith>('getHadith', { hadithId }, 'GET'),
+  addHadith: (data: Record<string, unknown>) => request('addHadith', data),
+  updateHadith: (hadithId: string, data: Record<string, unknown>) =>
+    request('updateHadith', { hadithId, data }),
+  deleteHadith: (hadithId: string) => request('deleteHadith', { hadithId }),
+
+  // Progress
+  getProgress: (studentId: string) => request<ProgressRecord[]>('getProgress', { studentId }, 'GET'),
+  saveProgress: (hadithId: string, field: 'memorized' | 'listened' | 'read', value: boolean) =>
+    request('saveProgress', { hadithId, field, value }),
+  saveMediaProgress: (hadithId: string, mediaType: 'video' | 'audio' | 'pdf', data: Record<string, unknown>) =>
+    request<{ success: boolean; completed: boolean; threshold: number }>('saveMediaProgress', { hadithId, mediaType, data }),
+  getDailyLessons: (bookId?: string) => request<DailyLesson>('getDailyLessons', { bookId }, 'GET'),
+
+  // Achievement approval (supervisor) — required before the admin issues a certificate
+  getAchievements: (studentId?: string, bookId?: string) =>
+    request<Achievement[]>('getAchievements', { studentId, bookId }, 'GET'),
+  approveAchievement: (studentId: string, bookId: string | undefined, grade: string, notes?: string) =>
+    request<{ success: boolean; progressPercent: number }>('approveAchievement', { studentId, bookId, grade, notes }),
+  revokeAchievement: (studentId: string, bookId?: string) => request('revokeAchievement', { studentId, bookId }),
+
+  // Books
+  getBooks: () => request<Book[]>('getBooks', {}, 'GET'),
+  addBook: (data: { title: string; description?: string; daysCount: number; itemsPerDay: number; autoAssign?: boolean }) =>
+    request<{ success: boolean; bookId: string }>('addBook', data),
+  updateBook: (bookId: string, data: Record<string, unknown>) => request('updateBook', { bookId, data }),
+  deleteBook: (bookId: string) => request('deleteBook', { bookId }),
+  getBookAssignments: (studentId?: string) =>
+    request<BookAssignment[]>('getBookAssignments', { studentId }, 'GET'),
+  setStudentBooks: (studentId: string, bookIds: string[]) =>
+    request('setStudentBooks', { studentId, bookIds }),
+  updateBookAssignments: (bookId: string, addIds: string[], removeIds: string[], startDate?: string) =>
+    request('updateBookAssignments', { bookId, addIds, removeIds, startDate }),
+
+  // Cycles
+  getCycles: () => request<Cycle[]>('getCycles', {}, 'GET'),
+  startCycle: (name: string, studentIds: string[]) => request('startCycle', { name, studentIds }),
+  completeCycle: (cycleId: string) => request('completeCycle', { cycleId }),
+
+  // Certificates
+  getCertificates: (studentId?: string) => request<Certificate[]>('getCertificates', { studentId }, 'GET'),
+  issueCertificate: (studentId: string, cycleId: string, bookId?: string) =>
+    request('issueCertificate', { studentId, cycleId, bookId }),
+  updateCertificate: (certificateId: string, data: Record<string, unknown>) =>
+    request('updateCertificate', { certificateId, data }),
+  downloadCertificate: (certificateId: string) => request('downloadCertificate', { certificateId }, 'GET'),
+
+  // Messages
+  getMessages: (userId: string) => request<Message[]>('getMessages', { userId }, 'GET'),
+  sendMessage: (toId: string, subject: string, body: string) =>
+    request('sendMessage', { toId, subject, body }),
+  markMessageRead: (messageId: string) => request('markMessageRead', { messageId }),
+
+  // Notifications
+  getNotifications: () => request<Notification[]>('getNotifications', {}, 'GET'),
+  sendNotification: (data: { title: string; body: string; target: string; targetId?: string }) =>
+    request('sendNotification', data),
+
+  // Profile
+  updateProfile: (data: Record<string, unknown>) => request('updateProfile', data),
+  changePassword: (oldPassword: string, newPassword: string) =>
+    request('changePassword', { oldPassword, newPassword }),
+  resetPassword: (studentId: string) => request('resetPassword', { studentId }),
+
+  // Dashboard
+  getDashboard: () => request<DashboardData>('getDashboard', {}, 'GET'),
+
+  // Settings
+  getSettings: () => request<AppSettings>('getSettings', {}, 'GET'),
+  updateSettings: (data: Record<string, unknown>) => request('updateSettings', { data }),
+
+  // Operations log
+  getOperationLog: () => request<OperationLog[]>('getOperationLog', {}, 'GET'),
+
+  // Backups
+  getBackups: () => request<Backup[]>('getBackups', {}, 'GET'),
+  backupDatabase: (name: string) => request('backupDatabase', { name }),
+  restoreBackup: (backupId: string) => request('restoreBackup', { backupId }),
+};
+
+export type Api = typeof api;
