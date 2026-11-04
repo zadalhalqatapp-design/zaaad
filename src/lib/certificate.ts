@@ -36,7 +36,7 @@ function mm(value: number): string {
 }
 
 /**
- * توسيط أفقي بإزاحة `left` صريحة بدل `left:50%; transform:translateX(-50%)`
+ * توسيط أفقي بإزاجة `left` صريحة بدل `left:50%; transform:translateX(-50%)`
  * (html2canvas يحسب القص دون تطبيق translateX فيقصّ النص المتوسّط).
  */
 function leftFor(widthMm: number): string {
@@ -57,15 +57,29 @@ function formatDate(dateStr?: string): string {
 /** صيغ الكلمات المتغيّرة حسب جنس الطالب؛ وعند عدم تحديده تُكتب الصيغتان معًا. */
 function genderForms(gender?: 'male' | 'female') {
   if (gender === 'male') {
-    return { student: 'الطالب', grants: 'تمنحه', advises: 'توصيه' };
+    return { 
+      student: 'الطالب', 
+      grants: 'تمنحه', 
+      advises: 'توصيه',
+      completed: 'قد أتمّ حفظ برنامج',
+      obtained: 'وقد حصل على تقدير:'
+    };
   }
   if (gender === 'female') {
-    return { student: 'الطالبة', grants: 'تمنحها', advises: 'توصيها' };
+    return { 
+      student: 'الطالبة', 
+      grants: 'تمنحها', 
+      advises: 'توصيها',
+      completed: 'قد أتمّت حفظ برنامج',
+      obtained: 'وقد حصلت على تقدير:'
+    };
   }
   return {
     student: 'الطالب / الطالبة',
     grants: 'تمنحه / تمنحها',
     advises: 'توصيه / توصيها',
+    completed: 'قد أتمّ / أتمّت حفظ برنامج',
+    obtained: 'وقد حصل / حصلت على تقدير:'
   };
 }
 
@@ -91,13 +105,13 @@ function buildParagraphs(cert: Certificate, appName: string): Tok[][] {
   const certText: Tok[] = [
     ...tokens(`تشهد منصة ${appName} بأن ${g.student}:`),
     ...tokens(cert.studentName, true),
-    ...tokens('قد أتمّ حفظ برنامج'),
+    ...tokens(g.completed),
     ...(book ? tokens(book, true) : []),
     ...tokens('بنسبة إنجاز'),
     ...tokens(`${cert.progressPercent}%`, true),
     ...tokens(cycleHasWord ? 'في' : 'في دورة'),
     ...tokens(cert.cycleName, true),
-    ...(grade ? [...tokens('وقد حصل على تقدير:'), ...tokens(grade, true)] : []),
+    ...(grade ? [...tokens(g.obtained), ...tokens(grade, true)] : []),
   ];
 
   const duaText: Tok[] = tokens(
@@ -107,9 +121,6 @@ function buildParagraphs(cert: Certificate, appName: string): Tok[][] {
 }
 
 // ===== ضبط الأسطر بالكشيدة (التطويل) =====
-// المتصفح لا يطوّل الحروف عند ضبط النص (justify يوسّع المسافات فقط)، فنحسب الأسطر بأنفسنا
-// ونُدخل حرف التطويل «ـ» في الكلمات حتى يمتلئ كل سطر بعرض الصندوق تمامًا.
-
 const JOIN_NEXT = 'بتثجحخسشصضطظعغفقكلمنهيئ';
 const isArabicLetter = (c: string) => /[ء-ي]/.test(c);
 const isMark = (c: string) => /[ً-ٰٟ]/.test(c);
@@ -267,7 +278,6 @@ function buildJustifiedBodyHtml(
 
 interface CertificateAssets {
   appName?: string;
-  /** (قديم) لم يعد يُستخدم: الشعار والوسام جزء من صورة الإطار. */
   logoUrl?: string;
   signatureUrl?: string;
 }
@@ -349,7 +359,6 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
 
   try {
     if ('fonts' in document) {
-      // نمرّر نصًا عربيًا لأن خطوط Google مقسّمة بـunicode-range: التحميل بلا نص يجلب الجزء اللاتيني فقط
       await Promise.all([
         document.fonts.load('400 20px Amiri', 'ابتثجحخدذرزسشصضطظعغفقكلمنهوي'),
         document.fonts.load('700 20px Amiri', 'ابتثجحخدذرزسشصضطظعغفقكلمنهوي0123456789%'),
@@ -357,7 +366,6 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
       await document.fonts.ready;
     }
 
-    // ننتظر تحميل كل الصور (الإطار خصوصًا) قبل الالتقاط وإلا يخرج PDF بلا إطار
     await Promise.all(
       Array.from(container.querySelectorAll('img')).map((img) =>
         img.complete
@@ -369,7 +377,6 @@ export async function generateCertificatePDF(cert: Certificate, assets: Certific
       ),
     );
 
-    // ضبط الفقرتين بالكشيدة داخل الصندوق (بعد تحميل الخط لأن القياس يعتمد عليه).
     const body = container.querySelector<HTMLElement>('#cert-body');
     if (body) {
       body.innerHTML = buildJustifiedBodyHtml(buildParagraphs(cert, appName), 196, 104, 8.4, 5.2).html;
